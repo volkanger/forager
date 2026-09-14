@@ -156,10 +156,18 @@
   .etiquette p { margin: 0; color: var(--ink-soft); font-size: 17px; }
 
   /* hosted */
-  .hosted { margin: 96px 0 0; padding: 44px; border: 1px solid var(--ink); display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: center; background: repeating-linear-gradient(-45deg, transparent 0 12px, rgba(180, 83, 42, 0.05) 12px 13px); }
-  @media (max-width: 760px) { .hosted { grid-template-columns: 1fr; padding: 28px; } }
+  .hosted { margin: 96px 0 0; padding: 44px; border: 1px solid var(--ink); display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 32px; align-items: center; background: repeating-linear-gradient(-45deg, transparent 0 12px, rgba(180, 83, 42, 0.05) 12px 13px); }
+  @media (max-width: 900px) { .hosted { grid-template-columns: 1fr; padding: 28px; } }
   .hosted h2 { font-size: 34px; }
   .hosted p { margin: 10px 0 0; color: var(--ink-soft); max-width: 58ch; }
+  .waitlist { display: flex; flex-wrap: wrap; gap: 10px; }
+  .waitlist input[type=email] { flex: 1; min-width: 220px; font: 17px/1 var(--body); color: var(--ink); background: var(--card); border: 1px solid var(--ink); border-radius: 2px; padding: 13px 14px; }
+  .waitlist input[type=email]:focus { outline: 2px solid var(--rust); outline-offset: 2px; }
+  .waitlist .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .waitlist button { cursor: pointer; }
+  .waitlist button:disabled { opacity: .6; cursor: progress; }
+  .waitlist .msg { flex-basis: 100%; margin: 2px 0 0; font: 13px/1.5 var(--mono); color: var(--muted); min-height: 1.5em; }
+  .waitlist .msg.ok { color: var(--moss); } .waitlist .msg.err { color: var(--rust); }
   .btn { display: inline-block; font: 500 14px/1 var(--mono); text-decoration: none; padding: 14px 18px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); border-radius: 2px; white-space: nowrap; }
   .btn:hover { background: var(--rust); border-color: var(--rust); color: var(--paper); }
 
@@ -330,7 +338,13 @@ npx wrangler deploy</pre>
         <h2>A hosted Forager</h2>
         <p>Sign up, bring your keys, and use <code>fora.ger.soy/v1</code> without deploying anything. Self-hosting will always stay free and fully featured.</p>
       </div>
-      <a class="btn" href="https://github.com/volkanger/forager" data-repo-link>Watch on GitHub →</a>
+      <form class="waitlist" id="waitlist" novalidate>
+        <label for="wl-email" class="hp">Email address</label>
+        <input id="wl-email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" aria-describedby="wl-msg">
+        <div class="hp" aria-hidden="true"><label for="wl-website">Website</label><input id="wl-website" name="website" tabindex="-1" autocomplete="off"></div>
+        <button class="btn" type="submit">Join the waitlist →</button>
+        <p class="msg" id="wl-msg" role="status">One email when the hosted beta opens. No spam, never shared.</p>
+      </form>
     </aside>
   </main>
 
@@ -388,6 +402,30 @@ npx wrangler deploy</pre>
     via.textContent = routes[n][0];
     left.textContent = routes[n][1];
   }, 2600);
+
+  // Waitlist signup. Always posts to fora.ger.soy, so self-hosted copies of this page still reach the list.
+  var form = document.getElementById("waitlist");
+  if (form) form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var msg = document.getElementById("wl-msg"), btn = form.querySelector("button");
+    var email = form.email.value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      msg.className = "msg err"; msg.textContent = "Please enter a valid email address."; form.email.focus(); return;
+    }
+    btn.disabled = true; msg.className = "msg"; msg.textContent = "Adding you…";
+    fetch("https://fora.ger.soy/api/waitlist", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: email, website: form.website.value, source: location.host || "file" })
+    }).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.body && r.body.error || "Something went wrong.");
+        msg.className = "msg ok"; msg.textContent = "You're on the list. We'll email you when the hosted beta opens.";
+        form.email.value = "";
+      })
+      .catch(function (e) { msg.className = "msg err"; msg.textContent = e.message === "Failed to fetch" ? "Couldn't reach the server. Try again in a moment." : e.message; })
+      .then(function () { btn.disabled = false; });
+  });
 
   // Scroll reveals.
   var items = document.querySelectorAll(".reveal");

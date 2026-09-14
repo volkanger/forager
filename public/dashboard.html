@@ -123,6 +123,15 @@
     </div>
   </section>
 
+  <section id="waitlist-section" hidden>
+    <h2>Hosted beta waitlist</h2>
+    <div class="play-row" style="align-items:center">
+      <span id="wl-count" class="tags"></span>
+      <button class="small" id="wl-export">Export CSV</button>
+    </div>
+    <div class="table-wrap" id="wl-table" style="margin-top:12px"></div>
+  </section>
+
   <section>
     <h2>Maintenance</h2>
     <div class="play-row">
@@ -296,6 +305,36 @@
       .then(function () { $("kadd").disabled = false; });
   };
 
+  var waitlistData = null;
+  function loadWaitlist() {
+    if (!key) return;
+    api("/admin/waitlist").then(function (r) {
+      waitlistData = r.body;
+      $("waitlist-section").hidden = r.body.count === 0;
+      $("wl-count").textContent = r.body.count + (r.body.count === 1 ? " person" : " people") + " waiting";
+      $("wl-table").innerHTML = '<table><tr><th>Email</th><th>Joined</th><th>Source</th><th></th></tr>' + r.body.entries.slice(0, 200).map(function (e) {
+        return '<tr><td>' + esc(e.email) + '</td><td>' + esc(new Date(e.createdAt).toLocaleString()) + '</td><td>' + esc(e.source) +
+          '</td><td><button class="small" data-wl-del="' + esc(e.email) + '">Remove</button></td></tr>';
+      }).join("") + '</table>';
+    }).catch(function () {});
+  }
+  $("wl-table").addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-wl-del]");
+    if (!b || !confirm("Remove " + b.getAttribute("data-wl-del") + " from the waitlist?")) return;
+    api("/admin/waitlist", { method: "DELETE", body: JSON.stringify({ email: b.getAttribute("data-wl-del") }) }).then(loadWaitlist);
+  });
+  $("wl-export").onclick = function () {
+    if (!waitlistData) return;
+    var csv = "email,joined_utc,source\n" + waitlistData.entries.map(function (e) {
+      return [e.email, new Date(e.createdAt).toISOString(), e.source].map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(",");
+    }).join("\n");
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = "forager-waitlist-" + new Date().toISOString().slice(0, 10) + ".csv";
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  };
+
   function load() {
     if (!key) return;
     api("/admin/usage").then(function (r) { render(r.body); }).catch(function (e) { $("status").textContent = e.message; });
@@ -306,8 +345,9 @@
     try { localStorage.setItem("forager-key", key); } catch (e) {}
     load();
     loadKeys();
+    loadWaitlist();
   };
-  $("refresh").onclick = function () { load(); loadKeys(); };
+  $("refresh").onclick = function () { load(); loadKeys(); loadWaitlist(); };
 
   $("send").onclick = function () {
     $("reply").textContent = "…";
@@ -336,6 +376,7 @@
 
   load();
   loadKeys();
+  loadWaitlist();
   setInterval(load, 20000);
 })();
 </script>

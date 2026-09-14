@@ -20,6 +20,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     // "/" (landing page) and "/dashboard" are static assets in ./public, served before the Worker runs.
     if (path === "/health") return json({ ok: true });
+    if (path === "/api/waitlist") return waitlistSignup(request, env);
 
     if (!env.PROXY_API_KEY) return apiError(500, "PROXY_API_KEY secret is not set; refusing to run an open proxy.");
     const isAdmin = path.startsWith("/admin/");
@@ -46,6 +47,13 @@ export default {
         return json(await tracker.resetCounters(body.match));
       }
       if (path === "/admin/probe" && request.method === "GET") return json(await tracker.probe());
+      if (path === "/admin/waitlist") {
+        if (request.method === "GET") return json(await tracker.waitlist());
+        if (request.method === "DELETE") {
+          const body = (await request.json().catch(() => ({}))) as { email?: string };
+          return json(await tracker.removeFromWaitlist(String(body.email ?? "").trim().toLowerCase()));
+        }
+      }
       if (path === "/admin/keys") {
         if (request.method === "GET") return json(await tracker.listKeys());
         if (request.method === "POST") {
@@ -69,6 +77,56 @@ export default {
     ctx.waitUntil(tracker.maintenance());
   },
 } satisfies ExportedHandler<Env>;
+
+// ------------------------------------------------------------------ waitlist
+
+const WAITLIST_CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+};
+
+/** Public hosted-beta signup. No auth; protected by a honeypot field, validation and a per-IP rate limit. */
+async function waitlistSignup(request: Request, env: Env): Promise<Response> {
+  const reply = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { ...WAITLIST_CORS, "content-type": "application/json" } });
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: WAITLIST_CORS });
+  if (request.method !== "POST") return reply(405, { error: "Use POST." });
+
+  let data: Record<string, unknown> = {};
+  const type = request.headers.get("content-type") ?? "";
+  try {
+    if (type.includes("application/json")) data = await request.json();
+    else data = Object.fromEntries((await request.formData()).entries());
+  } catch {
+    return reply(400, { error: "Couldn't read the form." });
+  }
+
+  // Bots fill every field; people never see this one. Pretend it worked.
+  if (String(data.website ?? "").trim()) return reply(200, { ok: true });
+
+  const email = String(data.email ?? "").trim().toLowerCase();
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    return reply(400, { error: "Please enter a valid email address." });
+  }
+
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const salt = `${env.KEYSTORE_SECRET ?? env.PROXY_API_KEY ?? ""}:${new Date().toISOString().slice(0, 10)}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${ip}`));
+  const client = [...new Uint8Array(digest).slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const origin = request.headers.get("origin") ?? "";
+  let originHost = "direct";
+  try {
+    if (origin) originHost = new URL(origin).host || "direct";
+  } catch {
+    // "null" or malformed Origin header
+  }
+  const source = String(data.source ?? "").trim() || originHost;
+
+  const tracker = env.TRACKER.get(env.TRACKER.idFromName("global"));
+  const result = await tracker.joinWaitlist({ email, source, client });
+  return "error" in result ? reply(result.status, { error: result.error }) : reply(200, { ok: true });
+}
 
 // ------------------------------------------------------------------ chat
 

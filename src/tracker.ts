@@ -123,6 +123,7 @@ export class Tracker extends DurableObject<Env> {
   private roundRobin = new Map<string, number>();
   private flushScheduled = false;
   private master: CryptoKey | null = null;
+  private waitlistHits = new Map<string, number[]>();
   private storedKeys: StoredKey[] = [];
   private unreadableKeys = 0;
   private accountId: string | null = null;
@@ -140,6 +141,7 @@ export class Tracker extends DurableObject<Env> {
         usd REAL NOT NULL DEFAULT 0, latency_ms INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (day, provider, model)) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL) WITHOUT ROWID`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS waitlist (email TEXT PRIMARY KEY, created_at INTEGER NOT NULL, source TEXT NOT NULL) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS provider_keys (
         id TEXT PRIMARY KEY, provider TEXT NOT NULL, label TEXT NOT NULL, last4 TEXT NOT NULL,
         ciphertext TEXT NOT NULL, iv TEXT NOT NULL, created_at INTEGER NOT NULL) WITHOUT ROWID`);
@@ -476,6 +478,44 @@ export class Tracker extends DurableObject<Env> {
     this.openRouterFree = models;
     this.kvSet("openrouter_free", JSON.stringify(models));
     return { count: models.length };
+  }
+
+  // ---------------------------------------------------------------- waitlist
+
+  /**
+   * Adds an email to the hosted-beta waitlist. Returns the same result whether or not the email was already
+   * on the list, so the endpoint can't be used to check who signed up. `client` is a salted hash of the
+   * caller's IP, kept only in memory for rate limiting.
+   */
+  joinWaitlist(input: { email: string; source: string; client: string }): { ok: true } | { error: string; status: number } {
+    const now = Date.now();
+    const recent = (this.waitlistHits.get(input.client) ?? []).filter((t) => now - t < 3_600_000);
+    if (recent.length >= 5) return { error: "Too many signups from your network. Try again later.", status: 429 };
+    recent.push(now);
+    this.waitlistHits.set(input.client, recent);
+    if (this.waitlistHits.size > 5_000) this.waitlistHits.clear();
+
+    this.sql.exec(
+      `INSERT INTO waitlist (email, created_at, source) VALUES (?, ?, ?) ON CONFLICT(email) DO NOTHING`,
+      input.email,
+      now,
+      input.source.slice(0, 80),
+    );
+    return { ok: true };
+  }
+
+  waitlist(): { count: number; entries: { email: string; createdAt: number; source: string }[] } {
+    const entries = this.sql
+      .exec<{ email: string; created_at: number; source: string }>(`SELECT email, created_at, source FROM waitlist ORDER BY created_at DESC`)
+      .toArray()
+      .map((r) => ({ email: r.email, createdAt: r.created_at, source: r.source }));
+    return { count: entries.length, entries };
+  }
+
+  removeFromWaitlist(email: string): { removed: boolean } {
+    const before = this.sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM waitlist WHERE email = ?`, email).one().n;
+    this.sql.exec(`DELETE FROM waitlist WHERE email = ?`, email);
+    return { removed: before > 0 };
   }
 
   // ---------------------------------------------------------------- provider keys
