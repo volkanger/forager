@@ -1,4 +1,2 @@
-# Required secrets. The Deploy to Cloudflare button asks for these; for local `npm run dev`,
-# copy this file to .dev.vars. Provider API keys are added later in the dashboard.
 PROXY_API_KEY=
 KEYSTORE_SECRET=
