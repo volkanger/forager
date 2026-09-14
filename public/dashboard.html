@@ -123,6 +123,16 @@
     </div>
   </section>
 
+  <section>
+    <h2>Interest</h2>
+    <div class="stats" id="interest-stats"><p class="empty">Loading…</p></div>
+    <div class="play-row" style="align-items:center;margin-top:12px">
+      <span class="tags" id="interest-sync"></span>
+      <button class="small" id="interest-refresh">Sync GitHub now</button>
+    </div>
+    <div class="table-wrap" id="interest-table" style="margin-top:12px"></div>
+  </section>
+
   <section id="waitlist-section" hidden>
     <h2>Hosted beta waitlist</h2>
     <div class="play-row" style="align-items:center">
@@ -305,6 +315,40 @@
       .then(function () { $("kadd").disabled = false; });
   };
 
+  function loadInterest() {
+    if (!key) return;
+    api("/admin/interest").then(function (r) {
+      var d = r.body, latest = d.github.filter(function (g) { return g.stars != null; })[0] || {};
+      var sum = function (field) { return d.github.reduce(function (a, g) { return a + (g[field] || 0); }, 0); };
+      var t = d.eventTotals || {};
+      $("interest-stats").innerHTML = [
+        ["Stars", latest.stars != null ? fmt(latest.stars) : "–", "GitHub"],
+        ["Watchers", latest.watchers != null ? fmt(latest.watchers) : "–", "GitHub"],
+        ["Forks", latest.forks != null ? fmt(latest.forks) : "–", "GitHub"],
+        ["Repo views", d.hasToken ? fmt(sum("views")) : "–", d.hasToken ? fmt(sum("view_uniques")) + " unique · last 30 days" : "needs GITHUB_TOKEN"],
+        ["Poll votes", d.poll ? fmt(d.poll.total) : "–", d.poll ? d.poll.options.map(function (o) { return o.option.split(",")[0] + " " + o.totalVoteCount; }).join(" · ") : (d.hasToken ? "sync to load" : "needs GITHUB_TOKEN")],
+        ["Deploy clicks", fmt(t.deploy_click || 0), "all time, landing page"],
+        ["Star / GitHub clicks", fmt((t.star_click || 0) + (t.github_click || 0)), "all time, landing page"],
+        ["Waitlist", fmt(d.waitlist), "signups"]
+      ].map(function (s) { return '<div class="stat"><small>' + s[0] + '</small><b>' + s[1] + '</b><small>' + esc(s[2]) + '</small></div>'; }).join("");
+      $("interest-sync").textContent = d.repo ? (d.repo + " · " + (d.syncedAt ? "synced " + new Date(d.syncedAt).toLocaleString() : "not synced yet")) : "Set GITHUB_REPO to track a repository";
+      var days = {};
+      d.github.forEach(function (g) { days[g.day] = Object.assign(days[g.day] || {}, g); });
+      d.events.forEach(function (e) { days[e.day] = days[e.day] || { day: e.day }; days[e.day][e.name] = e.count; });
+      var rows = Object.keys(days).sort().reverse().slice(0, 30);
+      $("interest-table").innerHTML = rows.length ? '<table><tr><th>Day</th><th class="num">Stars</th><th class="num">Views</th><th class="num">Unique</th><th class="num">Clones</th><th class="num">Deploy clicks</th><th class="num">Poll votes</th></tr>' + rows.map(function (k) {
+        var g = days[k], n = function (v) { return v == null ? "–" : fmt(v); };
+        return '<tr><td>' + esc(k) + '</td><td class="num">' + n(g.stars) + '</td><td class="num">' + n(g.views) + '</td><td class="num">' + n(g.view_uniques) + '</td><td class="num">' + n(g.clones) + '</td><td class="num">' + n(g.deploy_click) + '</td><td class="num">' + n(g.poll_votes) + '</td></tr>';
+      }).join("") + '</table>' : "";
+    }).catch(function (e) { $("interest-stats").innerHTML = '<p class="bad-text">' + esc(e.message) + '</p>'; });
+  }
+  $("interest-refresh").onclick = function () {
+    $("interest-sync").textContent = "Syncing…";
+    api("/admin/interest/sync", { method: "POST" }).then(function (r) {
+      if (r.body.trafficError) alert("GitHub traffic: " + r.body.trafficError);
+    }).catch(function (e) { alert(e.message); }).then(loadInterest);
+  };
+
   var waitlistData = null;
   function loadWaitlist() {
     if (!key) return;
@@ -346,8 +390,9 @@
     load();
     loadKeys();
     loadWaitlist();
+    loadInterest();
   };
-  $("refresh").onclick = function () { load(); loadKeys(); loadWaitlist(); };
+  $("refresh").onclick = function () { load(); loadKeys(); loadWaitlist(); loadInterest(); };
 
   $("send").onclick = function () {
     $("reply").textContent = "…";
@@ -377,6 +422,7 @@
   load();
   loadKeys();
   loadWaitlist();
+  loadInterest();
   setInterval(load, 20000);
 })();
 </script>

@@ -21,6 +21,13 @@ export default {
     // "/" (landing page) and "/dashboard" are static assets in ./public, served before the Worker runs.
     if (path === "/health") return json({ ok: true });
     if (path === "/api/waitlist") return waitlistSignup(request, env);
+    if (path === "/api/event") return landingEvent(request, env);
+    if (path === "/api/stats" && request.method === "GET") {
+      const stats = await env.TRACKER.get(env.TRACKER.idFromName("global")).publicStats();
+      return new Response(JSON.stringify(stats), {
+        headers: { ...WAITLIST_CORS, "content-type": "application/json", "cache-control": "public, max-age=600" },
+      });
+    }
 
     if (!env.PROXY_API_KEY) return apiError(500, "PROXY_API_KEY secret is not set; refusing to run an open proxy.");
     const isAdmin = path.startsWith("/admin/");
@@ -47,6 +54,8 @@ export default {
         return json(await tracker.resetCounters(body.match));
       }
       if (path === "/admin/probe" && request.method === "GET") return json(await tracker.probe());
+      if (path === "/admin/interest" && request.method === "GET") return json(await tracker.interest());
+      if (path === "/admin/interest/sync" && request.method === "POST") return json(await tracker.syncGitHub());
       if (path === "/admin/waitlist") {
         if (request.method === "GET") return json(await tracker.waitlist());
         if (request.method === "DELETE") {
@@ -82,9 +91,27 @@ export default {
 
 const WAITLIST_CORS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
   "access-control-allow-headers": "content-type",
 };
+
+/** Anonymous landing-page event counter (sent with navigator.sendBeacon). Nothing about the visitor is stored. */
+async function landingEvent(request: Request, env: Env): Promise<Response> {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: WAITLIST_CORS });
+  if (request.method !== "POST") return new Response(null, { status: 405, headers: WAITLIST_CORS });
+  const name = (await request.text()).trim().slice(0, 40);
+  const tracker = env.TRACKER.get(env.TRACKER.idFromName("global"));
+  await tracker.recordEvent({ name, client: await clientHash(request, env) });
+  return new Response(null, { status: 204, headers: WAITLIST_CORS });
+}
+
+/** Short, daily-salted hash of the caller's IP, used only for rate limiting. */
+async function clientHash(request: Request, env: Env): Promise<string> {
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const salt = `${env.KEYSTORE_SECRET ?? env.PROXY_API_KEY ?? ""}:${new Date().toISOString().slice(0, 10)}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${ip}`));
+  return [...new Uint8Array(digest).slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 /** Public hosted-beta signup. No auth; protected by a honeypot field, validation and a per-IP rate limit. */
 async function waitlistSignup(request: Request, env: Env): Promise<Response> {
@@ -110,10 +137,7 @@ async function waitlistSignup(request: Request, env: Env): Promise<Response> {
     return reply(400, { error: "Please enter a valid email address." });
   }
 
-  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const salt = `${env.KEYSTORE_SECRET ?? env.PROXY_API_KEY ?? ""}:${new Date().toISOString().slice(0, 10)}`;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${ip}`));
-  const client = [...new Uint8Array(digest).slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const client = await clientHash(request, env);
   const origin = request.headers.get("origin") ?? "";
   let originHost = "direct";
   try {

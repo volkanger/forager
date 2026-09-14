@@ -74,6 +74,12 @@
   .lede { font-size: 22px; line-height: 1.5; color: var(--ink-soft); max-width: 34ch; margin: 0 0 32px; }
   .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
   .cta img { height: 44px; display: block; }
+  .star { display: inline-flex; align-items: stretch; height: 44px; font: 500 14px/1 var(--mono); text-decoration: none; border: 1px solid var(--ink); border-radius: 2px; overflow: hidden; }
+  .star span { display: flex; align-items: center; gap: 7px; padding: 0 13px; }
+  .star .count { border-left: 1px solid var(--ink); background: var(--card); min-width: 42px; justify-content: center; }
+  .star:hover { color: var(--rust); border-color: var(--rust); }
+  .star:hover .count { border-color: var(--rust); }
+  .poll-link { flex-basis: 100%; font: 13px/1.5 var(--mono); margin: 4px 0 0; }
   .cta .ghost { font: 500 14px/1 var(--mono); text-decoration: none; border-bottom: 1px solid var(--rust); padding-bottom: 4px; }
   .fine { font: 400 13px/1.5 var(--mono); color: var(--muted); margin-top: 18px; }
 
@@ -197,7 +203,7 @@
       <a class="hide-sm" href="#how">How it works</a>
       <a class="hide-sm" href="#specimens">Providers</a>
       <a href="#self-host">Self-host</a>
-      <a href="https://github.com/volkanger/forager" data-repo-link>GitHub</a>
+      <a href="https://github.com/volkanger/forager" data-repo-link data-track="github_click">GitHub</a>
       <a href="/dashboard">Dashboard</a>
     </nav>
   </header>
@@ -209,8 +215,11 @@
         <h1 class="rise d2">Free LLM tiers, <em>foraged</em> into one endpoint.</h1>
         <p class="lede rise d3">Forager gathers the free API tiers of a dozen AI providers behind a single OpenAI-compatible URL on your own Cloudflare account, and counts every quota so you never pay a cent.</p>
         <div class="cta rise d4">
-          <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/volkanger/forager" data-deploy-link>
+          <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/volkanger/forager" data-deploy-link data-track="deploy_click">
             <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare">
+          </a>
+          <a class="star" href="https://github.com/volkanger/forager" data-track="star_click" aria-label="Star Forager on GitHub">
+            <span><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25z"/></svg>Star</span><span class="count" id="star-count">–</span>
           </a>
           <a class="ghost" href="#how">Read the field guide ↓</a>
         </div>
@@ -344,6 +353,7 @@ npx wrangler deploy</pre>
         <div class="hp" aria-hidden="true"><label for="wl-website">Website</label><input id="wl-website" name="website" tabindex="-1" autocomplete="off"></div>
         <button class="btn" type="submit">Join the waitlist →</button>
         <p class="msg" id="wl-msg" role="status">One email when the hosted beta opens. No spam, never shared.</p>
+        <p class="poll-link"><a href="https://github.com/volkanger/forager/discussions/2" data-track="poll_click">Or vote in the GitHub poll →</a></p>
       </form>
     </aside>
   </main>
@@ -352,7 +362,7 @@ npx wrangler deploy</pre>
     <span class="grow">Forager · open source (MIT) · inspired by <a href="https://github.com/tashfeenahmed/freellmapi">FreeLLMAPI</a></span>
     <a href="#self-host">Self-host</a>
     <a href="/dashboard">Dashboard</a>
-    <a href="https://github.com/volkanger/forager" data-repo-link>GitHub</a>
+    <a href="https://github.com/volkanger/forager" data-repo-link data-track="github_click">GitHub</a>
   </footer>
 </div>
 
@@ -402,6 +412,18 @@ npx wrangler deploy</pre>
     via.textContent = routes[n][0];
     left.textContent = routes[n][1];
   }, 2600);
+
+  // Anonymous click counts (no cookies, nothing about you is stored). Always sent to fora.ger.soy.
+  document.addEventListener("click", function (ev) {
+    var el = ev.target.closest && ev.target.closest("[data-track]");
+    if (!el || !navigator.sendBeacon) return;
+    try { navigator.sendBeacon("https://fora.ger.soy/api/event", el.getAttribute("data-track")); } catch (e) {}
+  });
+
+  // Live GitHub star count.
+  fetch("https://fora.ger.soy/api/stats").then(function (r) { return r.json(); }).then(function (s) {
+    if (typeof s.stars === "number") document.getElementById("star-count").textContent = s.stars.toLocaleString();
+  }).catch(function () {});
 
   // Waitlist signup. Always posts to fora.ger.soy, so self-hosted copies of this page still reach the list.
   var form = document.getElementById("waitlist");

@@ -17,6 +17,13 @@ export interface Env {
   CF_AIG_TOKEN?: string;
   GATEWAY_CACHE_TTL?: string;
 
+  /** "owner/repo" whose GitHub stars/traffic are tracked for the interest dashboard (optional). */
+  GITHUB_REPO?: string;
+  /** Read-only GitHub token; needed for traffic (views/clones), optional for star counts. */
+  GITHUB_TOKEN?: string;
+  /** Discussion number of the GitHub poll to track (optional; needs GITHUB_TOKEN). */
+  GITHUB_POLL?: string;
+
   MAX_ATTEMPTS?: string;
   UPSTREAM_TIMEOUT_MS?: string;
 

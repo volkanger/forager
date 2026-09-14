@@ -124,6 +124,8 @@ export class Tracker extends DurableObject<Env> {
   private flushScheduled = false;
   private master: CryptoKey | null = null;
   private waitlistHits = new Map<string, number[]>();
+  private eventHits = new Map<string, number>();
+  private githubSync: Promise<unknown> | null = null;
   private storedKeys: StoredKey[] = [];
   private unreadableKeys = 0;
   private accountId: string | null = null;
@@ -141,6 +143,10 @@ export class Tracker extends DurableObject<Env> {
         usd REAL NOT NULL DEFAULT 0, latency_ms INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (day, provider, model)) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL) WITHOUT ROWID`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS events (day TEXT NOT NULL, name TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, name)) WITHOUT ROWID`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS github_daily (
+        day TEXT PRIMARY KEY, stars INTEGER, watchers INTEGER, forks INTEGER,
+        views INTEGER, view_uniques INTEGER, clones INTEGER, clone_uniques INTEGER, poll_votes INTEGER) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS waitlist (email TEXT PRIMARY KEY, created_at INTEGER NOT NULL, source TEXT NOT NULL) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS provider_keys (
         id TEXT PRIMARY KEY, provider TEXT NOT NULL, label TEXT NOT NULL, last4 TEXT NOT NULL,
@@ -518,6 +524,151 @@ export class Tracker extends DurableObject<Env> {
     return { removed: before > 0 };
   }
 
+  // ---------------------------------------------------------------- interest tracking
+
+  /** Counts an anonymous landing-page event (e.g. a Deploy button click). At most 10 per client per day. */
+  recordEvent(input: { name: string; client: string }): { ok: true } {
+    const allowed = new Set(["deploy_click", "github_click", "star_click", "poll_click"]);
+    if (!allowed.has(input.name)) return { ok: true };
+    const day = periodId("day", Date.now(), "UTC");
+    const hitKey = `${day}|${input.client}|${input.name}`;
+    const hits = this.eventHits.get(hitKey) ?? 0;
+    if (hits >= 10) return { ok: true };
+    this.eventHits.set(hitKey, hits + 1);
+    if (this.eventHits.size > 20_000) this.eventHits.clear();
+    this.sql.exec(
+      `INSERT INTO events (day, name, count) VALUES (?, ?, 1) ON CONFLICT(day, name) DO UPDATE SET count = count + 1`,
+      day,
+      input.name,
+    );
+    return { ok: true };
+  }
+
+  /** Public numbers for the landing page. Refreshes GitHub data when it's more than an hour old. */
+  async publicStats(): Promise<{ stars: number | null; repo: string | null }> {
+    const repo = this.env.GITHUB_REPO ?? null;
+    if (!repo) return { stars: null, repo: null };
+    const syncedAt = Number(this.kvGet("github_synced_at") ?? 0);
+    if (Date.now() - syncedAt > 3_600_000) await this.syncGitHub().catch(() => undefined);
+    const row = this.sql.exec<{ stars: number | null }>(`SELECT stars FROM github_daily WHERE stars IS NOT NULL ORDER BY day DESC LIMIT 1`).toArray()[0];
+    return { stars: row?.stars ?? null, repo };
+  }
+
+  /**
+   * Saves GitHub stars, watchers and forks for today, plus the per-day views and clones GitHub reports for the
+   * last 14 days, so history survives GitHub's 14-day traffic window. Traffic needs GITHUB_TOKEN.
+   */
+  syncGitHub(): Promise<unknown> {
+    if (this.githubSync) return this.githubSync;
+    this.githubSync = this.doSyncGitHub().finally(() => {
+      this.githubSync = null;
+    });
+    return this.githubSync;
+  }
+
+  private async doSyncGitHub(): Promise<{ skipped?: string; stars?: number; trafficDays?: number; trafficError?: string }> {
+    const repo = this.env.GITHUB_REPO;
+    if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return { skipped: "GITHUB_REPO not set" };
+    const headers: Record<string, string> = { "user-agent": "forager-interest-tracker", accept: "application/vnd.github+json" };
+    if (this.env.GITHUB_TOKEN) headers.authorization = `Bearer ${this.env.GITHUB_TOKEN}`;
+    const get = async <T>(path: string): Promise<T> => {
+      const res = await fetch(`https://api.github.com/repos/${repo}${path}`, { headers, signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) throw new Error(`GitHub ${path || "/"} returned HTTP ${res.status}`);
+      return res.json() as Promise<T>;
+    };
+
+    const info = await get<{ stargazers_count: number; subscribers_count: number; forks_count: number }>("");
+    const today = periodId("day", Date.now(), "UTC");
+    this.sql.exec(
+      `INSERT INTO github_daily (day, stars, watchers, forks) VALUES (?, ?, ?, ?)
+       ON CONFLICT(day) DO UPDATE SET stars = excluded.stars, watchers = excluded.watchers, forks = excluded.forks`,
+      today,
+      info.stargazers_count,
+      info.subscribers_count,
+      info.forks_count,
+    );
+    this.kvSet("github_synced_at", String(Date.now()));
+
+    if (!this.env.GITHUB_TOKEN) return { stars: info.stargazers_count, trafficError: "GITHUB_TOKEN not set" };
+    try {
+      type Daily = { timestamp: string; count: number; uniques: number };
+      const views = await get<{ views: Daily[] }>("/traffic/views");
+      const clones = await get<{ clones: Daily[] }>("/traffic/clones");
+      for (const v of views.views) {
+        this.sql.exec(
+          `INSERT INTO github_daily (day, views, view_uniques) VALUES (?, ?, ?)
+           ON CONFLICT(day) DO UPDATE SET views = excluded.views, view_uniques = excluded.view_uniques`,
+          v.timestamp.slice(0, 10),
+          v.count,
+          v.uniques,
+        );
+      }
+      for (const c of clones.clones) {
+        this.sql.exec(
+          `INSERT INTO github_daily (day, clones, clone_uniques) VALUES (?, ?, ?)
+           ON CONFLICT(day) DO UPDATE SET clones = excluded.clones, clone_uniques = excluded.clone_uniques`,
+          c.timestamp.slice(0, 10),
+          c.count,
+          c.uniques,
+        );
+      }
+      const referrers = await get<{ referrer: string; count: number; uniques: number }[]>("/traffic/popular/referrers");
+      this.kvSet("github_referrers", JSON.stringify(referrers));
+
+      const pollNumber = Number(this.env.GITHUB_POLL);
+      if (pollNumber > 0) {
+        const [owner, name] = repo.split("/");
+        const res = await fetch("https://api.github.com/graphql", {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            query: `query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) {
+              discussion(number: $n) { url poll { question totalVoteCount options(first: 20) { nodes { option totalVoteCount } } } } } }`,
+            variables: { owner, name, n: pollNumber },
+          }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        const body = (await res.json()) as {
+          data?: { repository?: { discussion?: { url: string; poll?: { question: string; totalVoteCount: number; options: { nodes: { option: string; totalVoteCount: number }[] } } } } };
+        };
+        const discussion = body.data?.repository?.discussion;
+        if (discussion?.poll) {
+          this.kvSet("github_poll", JSON.stringify({ url: discussion.url, question: discussion.poll.question, total: discussion.poll.totalVoteCount, options: discussion.poll.options.nodes }));
+          this.sql.exec(`UPDATE github_daily SET poll_votes = ? WHERE day = ?`, discussion.poll.totalVoteCount, today);
+        }
+      }
+      return { stars: info.stargazers_count, trafficDays: views.views.length };
+    } catch (e) {
+      return { stars: info.stargazers_count, trafficError: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** Everything the dashboard's Interest section shows. */
+  interest() {
+    const since = periodId("day", Date.now() - 29 * 86_400_000, "UTC");
+    const github = this.sql
+      .exec<{ day: string; stars: number | null; watchers: number | null; forks: number | null; views: number | null; view_uniques: number | null; clones: number | null; clone_uniques: number | null }>(
+        `SELECT * FROM github_daily WHERE day >= ? ORDER BY day DESC`,
+        since,
+      )
+      .toArray();
+    const events = this.sql
+      .exec<{ day: string; name: string; count: number }>(`SELECT day, name, count FROM events WHERE day >= ? ORDER BY day DESC`, since)
+      .toArray();
+    const totals = this.sql.exec<{ name: string; total: number }>(`SELECT name, SUM(count) AS total FROM events GROUP BY name`).toArray();
+    return {
+      repo: this.env.GITHUB_REPO ?? null,
+      hasToken: !!this.env.GITHUB_TOKEN,
+      syncedAt: Number(this.kvGet("github_synced_at") ?? 0) || null,
+      referrers: JSON.parse(this.kvGet("github_referrers") ?? "[]"),
+      poll: JSON.parse(this.kvGet("github_poll") ?? "null"),
+      github,
+      events,
+      eventTotals: Object.fromEntries(totals.map((t) => [t.name, t.total])),
+      waitlist: this.sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM waitlist`).one().n,
+    };
+  }
+
   // ---------------------------------------------------------------- provider keys
 
   /** Key inventory for the dashboard. Never includes key values. */
@@ -622,6 +773,7 @@ export class Tracker extends DurableObject<Env> {
     this.sql.exec(`DELETE FROM stats WHERE day < ?`, cutoff);
     this.sql.exec(`DELETE FROM cooldowns WHERE until < ?`, Date.now());
     await this.syncOpenRouter().catch((e) => console.error("openrouter sync failed", e));
+    await this.syncGitHub().catch((e) => console.error("github sync failed", e));
   }
 
   async alarm(): Promise<void> {
