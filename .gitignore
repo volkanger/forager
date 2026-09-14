@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+.dev.vars
+.proxy-key
+.DS_Store
+.env
+.env.*
+!.dev.vars.example

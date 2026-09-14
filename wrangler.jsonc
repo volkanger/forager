@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "forager",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "workers_dev": true,
+
+  // Landing page (/) and dashboard (/dashboard). Static asset requests are free and don't run the Worker.
+  "assets": { "directory": "./public" },
+
+  // One global Durable Object (SQLite-backed, available on the Workers Free plan)
+  // holds every quota counter, cooldown, daily stat and encrypted provider key.
+  "durable_objects": {
+    "bindings": [{ "name": "TRACKER", "class_name": "Tracker" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Tracker"] }],
+
+  // Workers AI binding. Forager only uses it to discover your account ID for AI Gateway
+  // URLs, so this config has nothing account-specific in it.
+  "ai": { "binding": "AI" },
+
+  // Daily refresh of OpenRouter's ":free" model list + stats pruning.
+  "triggers": { "crons": ["17 3 * * *"] },
+
+  "vars": {
+    // AI Gateway name. If it doesn't exist or rejects requests, Forager calls providers directly.
+    "AI_GATEWAY_ID": "forager",
+    // Max provider/model attempts per request before giving up.
+    "MAX_ATTEMPTS": "6",
+    // Time to wait for upstream response headers (streams may run longer).
+    "UPSTREAM_TIMEOUT_MS": "30000"
+    // Optional: "GATEWAY_CACHE_TTL": "3600"  → AI Gateway caches identical prompts (saves quota)
+  }
+
+  // Secrets (prompted by the Deploy button, or `wrangler secret put NAME`):
+  //   PROXY_API_KEY    – bearer token your clients and the dashboard use (comma-separate for several)
+  //   KEYSTORE_SECRET  – encrypts provider keys added in the dashboard (any random string, 16+ chars)
+  // Optional secrets:
+  //   ADMIN_API_KEY    – separate key for /admin/* (defaults to PROXY_API_KEY)
+  //   CF_AIG_TOKEN     – if the AI Gateway has "Authenticated Gateway" turned on
+  //   Provider keys (GROQ_API_KEY, GEMINI_API_KEY, …) – usually easier to add in the dashboard
+}

@@ -1,0 +1,50 @@
+{
+  "name": "forager",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Forager: one OpenAI-compatible endpoint that routes across free LLM tiers on Cloudflare Workers",
+  "homepage": "https://fora.ger.soy",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/volkanger/forager"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:fora": "wrangler deploy --domain fora.ger.soy",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types"
+  },
+  "cloudflare": {
+    "bindings": {
+      "PROXY_API_KEY": {
+        "description": "Your router password. Clients send it as `Authorization: Bearer …` and you paste it into the dashboard. Use a long random string, e.g. the output of `openssl rand -hex 32`, and keep a copy in your password manager."
+      },
+      "KEYSTORE_SECRET": {
+        "description": "Encrypts the provider API keys you add in the dashboard. Any random string of **16+ characters** (e.g. `openssl rand -hex 32`). If you change it later, keys added in the dashboard must be re-added."
+      },
+      "AI_GATEWAY_ID": {
+        "description": "Name of the Cloudflare AI Gateway to log requests through. Optional: if it doesn't exist, Forager calls providers directly."
+      },
+      "MAX_ATTEMPTS": {
+        "description": "How many provider/model attempts one request may make before giving up."
+      },
+      "UPSTREAM_TIMEOUT_MS": {
+        "description": "Milliseconds to wait for a provider to start answering (slow providers have their own, longer limits)."
+      },
+      "TRACKER": {
+        "description": "Durable Object that tracks free-quota usage per cycle and stores encrypted provider keys."
+      },
+      "AI": {
+        "description": "Workers AI binding, used only to find your account ID for AI Gateway URLs."
+      }
+    }
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260914.1",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.131.0"
+  }
+}

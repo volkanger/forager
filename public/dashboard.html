@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forager · Dashboard</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --line: #e3e1d9;
+    --ok: #2f7d4f; --warn: #b7791f; --bad: #b83a3a; --accent: #f38020; --bar: #ecebe5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ecebe6; --muted: #9c9a92; --line: #33322e; --bar: #2c2b28; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 16px; margin: 0 auto 0 0; letter-spacing: -0.01em; }
+  header h1 span { color: var(--accent); }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
+  input, textarea, button { font: inherit; color: inherit; }
+  input, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  button { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:hover { filter: brightness(0.97); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 14px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .stat small { color: var(--muted); }
+  .providers { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .prov { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .prov.off { opacity: 0.55; }
+  .prov h3 { margin: 0 0 4px; font-size: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .badge { font-size: 11px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); font-weight: 500; }
+  .badge.ok { color: var(--ok); border-color: currentColor; }
+  .badge.bad { color: var(--bad); border-color: currentColor; }
+  .note { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+  .meter { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 6px 0; font-size: 12px; }
+  .meter .track { grid-column: 1 / -1; height: 6px; background: var(--bar); border-radius: 99px; overflow: hidden; }
+  .meter .fill { height: 100%; background: var(--ok); }
+  .meter .fill.warn { background: var(--warn); }
+  .meter .fill.bad { background: var(--bad); }
+  .meter span:last-of-type { color: var(--muted); font-variant-numeric: tabular-nums; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .model { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 8px; }
+  .model code { font-size: 12px; }
+  .tags { color: var(--muted); font-size: 11px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; }
+  .play { display: grid; gap: 10px; }
+  .play-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .play-row input { flex: 1; min-width: 200px; }
+  textarea { width: 100%; min-height: 80px; resize: vertical; }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 420px; overflow: auto; font-size: 12px; }
+  .empty { color: var(--muted); }
+  #status { color: var(--muted); font-size: 12px; }
+  .key-form { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(200px, 2fr) auto; gap: 10px; margin-bottom: 14px; }
+  @media (max-width: 760px) { .key-form { grid-template-columns: 1fr; } }
+  select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  .keychip { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 99px; padding: 1px 4px 1px 9px; margin: 2px 6px 2px 0; font-size: 12px; }
+  .keychip button { border: 0; background: transparent; padding: 0 6px; color: var(--bad); }
+  button.small { padding: 3px 9px; font-size: 12px; }
+  .ok-text { color: var(--ok); } .bad-text { color: var(--bad); }
+  td.wrap { white-space: normal; }
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="/" style="color:inherit;text-decoration:none"><span>●</span> Forager</a></h1>
+  <input id="key" type="password" placeholder="Admin API key" autocomplete="off" size="28">
+  <button class="primary" id="save">Connect</button>
+  <button id="refresh">Refresh</button>
+  <span id="status"></span>
+  
+</header>
+<main>
+  <section>
+    <h2>Today (UTC)</h2>
+    <div class="stats" id="stats"><p class="empty">Enter your admin key to load usage.</p></div>
+  </section>
+
+  <section>
+    <h2>Provider keys</h2>
+    <div class="key-form">
+      <select id="kprovider" aria-label="Provider"></select>
+      <input id="klabel" placeholder="Label (optional)" maxlength="60" autocomplete="off">
+      <input id="kvalue" type="password" placeholder="Paste API key" autocomplete="off">
+      <button class="primary" id="kadd">Add key</button>
+    </div>
+    <p class="note" id="knote">Keys are encrypted before they're stored and never shown again, only their last 4 characters.</p>
+    <div class="table-wrap" id="keys"></div>
+  </section>
+
+  <section>
+    <h2>Providers &amp; quota cycles</h2>
+    <div class="providers" id="providers"></div>
+  </section>
+
+  <section>
+    <h2>Cooldowns</h2>
+    <div class="table-wrap" id="cooldowns"></div>
+  </section>
+
+  <section>
+    <h2>Today by model</h2>
+    <div class="table-wrap" id="models"></div>
+  </section>
+
+  <section>
+    <h2>Playground</h2>
+    <div class="play">
+      <div class="play-row">
+        <input id="model" value="auto" placeholder="auto, auto:coding, groq/openai/gpt-oss-120b">
+        <button class="primary" id="send">Send</button>
+      </div>
+      <textarea id="prompt">Say hello in five words.</textarea>
+      <pre id="reply" class="empty">Responses show here, with the provider that served them.</pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>Maintenance</h2>
+    <div class="play-row">
+      <button id="sync">Sync OpenRouter free models</button>
+      <button id="probe">Probe providers for stale models</button>
+      <button id="reset">Reset all counters</button>
+    </div>
+    <pre id="admin" class="empty" style="margin-top:12px">Maintenance output shows here.</pre>
+  </section>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var key = "";
+  try { key = localStorage.getItem("forager-key") || ""; } catch (e) {}
+  $("key").value = key;
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmt(n) { return Number(n || 0).toLocaleString(); }
+  function money(n) { return "$" + Number(n || 0).toFixed(4); }
+  function until(ts) {
+    var s = Math.max(0, Math.round((ts - Date.now()) / 1000));
+    if (s < 90) return s + "s";
+    if (s < 5400) return Math.round(s / 60) + "m";
+    if (s < 172800) return Math.round(s / 3600) + "h";
+    return Math.round(s / 86400) + "d";
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ authorization: "Bearer " + key, "content-type": "application/json" }, opts.headers || {});
+    return fetch(path, opts).then(function (r) {
+      return r.text().then(function (t) {
+        var body; try { body = JSON.parse(t); } catch (e) { body = t; }
+        if (!r.ok) throw new Error((body && body.error && body.error.message) || ("HTTP " + r.status));
+        return { body: body, headers: r.headers };
+      });
+    });
+  }
+
+  function meter(l) {
+    var pct = l.cap ? Math.min(100, (l.used / l.cap) * 100) : 0;
+    var cls = pct >= 100 ? "bad" : pct >= 75 ? "warn" : "";
+    var label = (l.key != null ? "key " + l.key + " · " : "") + l.window + " " + l.metric;
+    var val = l.metric === "usd" ? money(l.used) + " / " + money(l.cap) : fmt(l.used) + " / " + fmt(l.cap);
+    return '<div class="meter"><span>' + esc(label) + ' <span class="tags">resets in ' + until(l.resetsAt) + '</span></span><span>' + val +
+      '</span><div class="track"><div class="fill ' + cls + '" style="width:' + pct.toFixed(1) + '%"></div></div></div>';
+  }
+
+  function render(u) {
+    var t = u.today.reduce(function (a, r) {
+      a.req += r.requests; a.ok += r.ok; a.tin += r.tok_in; a.tout += r.tok_out; a.usd += r.usd; return a;
+    }, { req: 0, ok: 0, tin: 0, tout: 0, usd: 0 });
+    var g = u.global[0];
+    $("stats").innerHTML = [
+      ["Requests", fmt(t.req), t.req ? Math.round((t.ok / t.req) * 100) + "% succeeded" : "no traffic yet"],
+      ["Input tokens", fmt(t.tin), "estimated when provider omits usage"],
+      ["Output tokens", fmt(t.tout), ""],
+      ["Metered free allowance", money(t.usd), "shadow cost inside free tiers · real spend $0"],
+      ["Worker daily cap", g ? fmt(g.used) + " / " + fmt(g.cap) : "none", "keeps Workers + DO on free plan"]
+    ].map(function (s) { return '<div class="stat"><small>' + s[0] + '</small><b>' + s[1] + '</b><small>' + esc(s[2]) + '</small></div>'; }).join("");
+
+    $("providers").innerHTML = u.providers.map(function (p) {
+      var status = p.unusable ? '<span class="badge bad">' + esc(p.unusable) + '</span>' : '<span class="badge ok">' + p.keys + ' key' + (p.keys === 1 ? "" : "s") + '</span>';
+      var gw = p.viaGateway ? '<span class="badge">AI Gateway</span>' : '<span class="badge">direct</span>';
+      var models = p.models.map(function (m) {
+        return '<div class="model"><code>' + esc(m.id) + '</code> <span class="tags">p' + m.priority + ' · ' + esc(m.tags.join(", ")) + '</span>' +
+          m.limits.map(meter).join("") + '</div>';
+      }).join("");
+      return '<div class="prov' + (p.unusable ? " off" : "") + '"><h3>' + esc(p.name) + ' ' + status + ' ' + gw + '</h3>' +
+        '<p class="note">' + esc(p.notes || "") + ' Daily reset: ' + esc(p.resetTz) + '.</p>' +
+        (p.limits.length ? p.limits.map(meter).join("") : "") +
+        '<details><summary>' + p.models.length + ' models</summary>' + models + '</details></div>';
+    }).join("");
+
+    $("cooldowns").innerHTML = u.cooldowns.length
+      ? '<table><tr><th>Target</th><th>Reason</th><th class="num">Ends in</th></tr>' + u.cooldowns.map(function (c) {
+          return '<tr><td><code>' + esc(c.target) + '</code></td><td>' + esc(c.reason) + '</td><td class="num">' + until(c.until) + '</td></tr>';
+        }).join("") + '</table>'
+      : '<p class="empty">Nothing cooling down.</p>';
+
+    $("models").innerHTML = u.today.length
+      ? '<table><tr><th>Provider</th><th>Model</th><th class="num">Requests</th><th class="num">OK</th><th class="num">Tokens in</th><th class="num">Tokens out</th><th class="num">Avg latency</th><th class="num">Metered</th></tr>' +
+        u.today.map(function (r) {
+          return '<tr><td>' + esc(r.provider) + '</td><td><code>' + esc(r.model) + '</code></td><td class="num">' + fmt(r.requests) + '</td><td class="num">' + fmt(r.ok) +
+            '</td><td class="num">' + fmt(r.tok_in) + '</td><td class="num">' + fmt(r.tok_out) + '</td><td class="num">' + fmt(Math.round(r.latency_ms / Math.max(1, r.requests))) +
+            ' ms</td><td class="num">' + money(r.usd) + '</td></tr>';
+        }).join("") + '</table>'
+      : '<p class="empty">No requests today.</p>';
+
+    $("status").textContent = "Updated " + new Date(u.now).toLocaleTimeString() + (u.customCatalog ? " · custom catalog" : " · catalog " + u.catalogVersion);
+  }
+
+  var keyData = null;
+  var testResults = {};
+
+  function renderKeys(k) {
+    keyData = k;
+    var selected = $("kprovider").value;
+    $("kprovider").innerHTML = k.providers.map(function (p) {
+      var hasKey = p.secretKeys + p.stored.length > 0;
+      return '<option value="' + esc(p.id) + '">' + esc(p.name) + (p.keyless ? " (works without key)" : hasKey ? "" : " · no key") + '</option>';
+    }).join("");
+    if (selected) $("kprovider").value = selected;
+    if (!k.keystoreReady) $("knote").innerHTML = '<span class="bad-text">Key storage isn\'t set up yet (KEYSTORE_SECRET secret missing), so keys can only be set with Wrangler.</span>';
+    else if (k.unreadableKeys) $("knote").innerHTML = '<span class="bad-text">' + k.unreadableKeys + ' stored key(s) can\'t be decrypted (KEYSTORE_SECRET changed). Remove and re-add them.</span>';
+
+    $("keys").innerHTML = '<table><tr><th>Provider</th><th>Keys</th><th>Last test</th><th></th></tr>' + k.providers.map(function (p) {
+      var chips = p.stored.map(function (s) {
+        return '<span class="keychip" title="Added ' + esc(new Date(s.createdAt).toLocaleDateString()) + '">' + esc(s.label) + ' ····' + esc(s.last4) +
+          '<button data-del="' + esc(s.id) + '" data-name="' + esc(s.label) + '" title="Remove key" aria-label="Remove key">✕</button></span>';
+      }).join("");
+      if (p.secretKeys) chips = '<span class="keychip" style="padding-right:9px">' + p.secretKeys + ' from Wrangler secret</span>' + chips;
+      if (!chips) chips = p.keyless ? '<span class="tags">No key needed</span>' : '<span class="tags">No key yet</span>';
+      var badges = (p.requiresCard ? ' <span class="badge">card on file</span>' : '') +
+        (p.signupUrl ? ' <a class="tags" href="' + esc(p.signupUrl) + '" target="_blank" rel="noopener">get a key ↗</a>' : '');
+      var usable = p.keyless || p.secretKeys + p.stored.length > 0;
+      var t = testResults[p.id];
+      return '<tr><td class="wrap"><b>' + esc(p.name) + '</b>' + badges + '</td><td class="wrap">' + chips + '</td><td class="wrap">' +
+        (t ? '<span class="' + (t.ok ? "ok-text" : "bad-text") + '">' + esc(t.text) + '</span>' : '<span class="tags">–</span>') + '</td><td>' +
+        (usable && p.testModel ? '<button class="small" data-test="' + esc(p.id) + '">Test</button>' : '') + '</td></tr>';
+    }).join("") + '</table>';
+  }
+
+  function loadKeys() {
+    if (!key) return Promise.resolve();
+    return api("/admin/keys").then(function (r) { renderKeys(r.body); }).catch(function (e) { $("keys").innerHTML = '<p class="bad-text">' + esc(e.message) + '</p>'; });
+  }
+
+  function testProvider(id) {
+    var p = keyData && keyData.providers.filter(function (x) { return x.id === id; })[0];
+    if (!p || !p.testModel) return;
+    testResults[id] = { ok: true, text: "Testing " + p.testModel + "…" };
+    renderKeys(keyData);
+    var started = Date.now();
+    api("/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: p.id + "/" + p.testModel, max_tokens: 300, messages: [{ role: "user", content: "Reply with exactly: pong" }] })
+    }).then(function (r) {
+      testResults[id] = { ok: true, text: "✓ " + p.testModel + " answered in " + ((Date.now() - started) / 1000).toFixed(1) + "s" };
+    }).catch(function (e) {
+      testResults[id] = { ok: false, text: "✕ " + e.message };
+    }).then(function () { renderKeys(keyData); load(); });
+  }
+
+  $("keys").addEventListener("click", function (ev) {
+    var del = ev.target.closest("[data-del]");
+    var test = ev.target.closest("[data-test]");
+    if (del && confirm('Remove key "' + del.getAttribute("data-name") + '"? Requests stop using it right away.')) {
+      api("/admin/keys/" + encodeURIComponent(del.getAttribute("data-del")), { method: "DELETE" }).then(loadKeys).then(load)
+        .catch(function (e) { alert(e.message); });
+    }
+    if (test) testProvider(test.getAttribute("data-test"));
+  });
+
+  $("kadd").onclick = function () {
+    var provider = $("kprovider").value;
+    var value = $("kvalue").value.trim();
+    if (!value) { $("kvalue").focus(); return; }
+    $("kadd").disabled = true;
+    api("/admin/keys", { method: "POST", body: JSON.stringify({ provider: provider, key: value, label: $("klabel").value }) })
+      .then(function () {
+        $("kvalue").value = ""; $("klabel").value = "";
+        return loadKeys().then(function () { testProvider(provider); });
+      })
+      .catch(function (e) { alert(e.message); })
+      .then(function () { $("kadd").disabled = false; });
+  };
+
+  function load() {
+    if (!key) return;
+    api("/admin/usage").then(function (r) { render(r.body); }).catch(function (e) { $("status").textContent = e.message; });
+  }
+
+  $("save").onclick = function () {
+    key = $("key").value.trim();
+    try { localStorage.setItem("forager-key", key); } catch (e) {}
+    load();
+    loadKeys();
+  };
+  $("refresh").onclick = function () { load(); loadKeys(); };
+
+  $("send").onclick = function () {
+    $("reply").textContent = "…";
+    api("/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: $("model").value.trim() || "auto", messages: [{ role: "user", content: $("prompt").value }] })
+    }).then(function (r) {
+      var msg = r.body.choices && r.body.choices[0] && r.body.choices[0].message;
+      $("reply").textContent = "via " + r.headers.get("x-routed-via") + " (attempt " + r.headers.get("x-forager-attempts") + ")\n\n" +
+        ((msg && msg.content) || JSON.stringify(r.body, null, 2));
+      load();
+    }).catch(function (e) { $("reply").textContent = e.message; load(); });
+  };
+
+  function admin(path, method, body) {
+    $("admin").textContent = "…";
+    api(path, { method: method, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { $("admin").textContent = JSON.stringify(r.body, null, 2); load(); })
+      .catch(function (e) { $("admin").textContent = e.message; });
+  }
+  $("sync").onclick = function () { admin("/admin/sync", "POST"); };
+  $("probe").onclick = function () { admin("/admin/probe", "GET"); };
+  $("reset").onclick = function () {
+    if (confirm("Reset every quota counter and cooldown? Only do this if the provider's real usage was also reset — otherwise you may exceed free limits.")) admin("/admin/reset", "POST", {});
+  };
+
+  load();
+  loadKeys();
+  setInterval(load, 20000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>document.documentElement.classList.add("js")</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forager · Free LLM tiers, foraged into one endpoint</title>
+<meta name="description" content="Forager is an open-source LLM router you deploy to your own Cloudflare account. One OpenAI-compatible endpoint that spreads requests across free provider tiers and stops before any limit, so you pay $0.">
+<meta property="og:title" content="Forager · Free LLM tiers, foraged into one endpoint">
+<meta property="og:description" content="One OpenAI-compatible endpoint across a dozen free LLM tiers. Deploys to your Cloudflare account in one click. Tracks every quota so you stay at $0.">
+<meta property="og:url" content="https://fora.ger.soy">
+<meta name="theme-color" content="#f3ede0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 16c0-7 5.4-11 12-11s12 4 12 11H4z' fill='%23b4532a'/%3E%3Crect x='13' y='16' width='6' height='12' rx='3' fill='%231f3b2c'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f3ede0;
+    --paper-2: #ebe3d2;
+    --card: #faf6ec;
+    --ink: #1f3b2c;
+    --ink-soft: #4a5d4f;
+    --muted: #7a7563;
+    --rule: #cfc4ab;
+    --rust: #b4532a;
+    --rust-soft: #e7c9b5;
+    --moss: #6f8a4c;
+    --shadow: 0 1px 0 rgba(31, 59, 44, 0.08), 0 12px 28px -18px rgba(31, 59, 44, 0.35);
+    --display: "Young Serif", "Iowan Old Style", Georgia, serif;
+    --body: "Newsreader", "Iowan Old Style", Georgia, serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #141c17; --paper-2: #1a241d; --card: #1d2a21; --ink: #e8e1cf; --ink-soft: #c2bda9;
+      --muted: #8f8a78; --rule: #33443a; --rust: #e0845a; --rust-soft: #3d2a20; --moss: #9bb57a;
+      --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 16px 32px -20px rgba(0, 0, 0, 0.8);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 400 19px/1.55 var(--body); -webkit-font-smoothing: antialiased;
+  }
+  /* paper grain */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.35; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .3 0 0 0 0 .25 0 0 0 0 .15 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  @media (prefers-color-scheme: dark) { body::before { mix-blend-mode: screen; opacity: 0.12; } }
+  a { color: inherit; text-decoration-color: var(--rust); text-underline-offset: 3px; }
+  a:hover { color: var(--rust); }
+  code, pre, .mono { font-family: var(--mono); }
+  .wrap { position: relative; z-index: 1; max-width: 1160px; margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- header ---------- */
+  header.top { display: flex; align-items: center; gap: 28px; padding: 22px 0; border-bottom: 1px solid var(--rule); }
+  .mark { display: flex; align-items: center; gap: 10px; font: 400 26px/1 var(--display); text-decoration: none; }
+  .mark svg { width: 30px; height: 30px; }
+  nav.links { display: flex; gap: 22px; margin-left: auto; font: 500 13px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+  nav.links a { text-decoration: none; color: var(--ink-soft); }
+  nav.links a:hover { color: var(--rust); }
+  @media (max-width: 760px) { nav.links .hide-sm { display: none; } }
+
+  /* ---------- hero ---------- */
+  .hero { display: grid; grid-template-columns: 1.15fr 1fr; gap: 56px; align-items: center; padding: 72px 0 64px; }
+  @media (max-width: 960px) { .hero { grid-template-columns: 1fr; padding-top: 48px; } }
+  .eyebrow { font: 500 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .14em; color: var(--rust); display: flex; align-items: center; gap: 10px; }
+  .eyebrow::before { content: ""; width: 28px; height: 1px; background: currentColor; }
+  h1 { font: 400 clamp(44px, 6.4vw, 82px)/0.98 var(--display); letter-spacing: -0.02em; margin: 18px 0 22px; }
+  h1 em { font-style: italic; font-family: var(--body); font-weight: 400; color: var(--rust); }
+  .lede { font-size: 22px; line-height: 1.5; color: var(--ink-soft); max-width: 34ch; margin: 0 0 32px; }
+  .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
+  .cta img { height: 44px; display: block; }
+  .cta .ghost { font: 500 14px/1 var(--mono); text-decoration: none; border-bottom: 1px solid var(--rust); padding-bottom: 4px; }
+  .fine { font: 400 13px/1.5 var(--mono); color: var(--muted); margin-top: 18px; }
+
+  /* specimen label */
+  .specimen { position: relative; background: var(--card); border: 1px solid var(--rule); border-radius: 4px; box-shadow: var(--shadow); padding: 26px 26px 22px; transform: rotate(0.6deg); }
+  .specimen::before { content: ""; position: absolute; top: -12px; left: 50%; width: 92px; height: 24px; margin-left: -46px; background: var(--rust-soft); opacity: .75; transform: rotate(-2deg); }
+  .specimen .tag { display: flex; gap: 12px; white-space: nowrap; justify-content: space-between; font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); border-bottom: 1px dashed var(--rule); padding-bottom: 12px; margin-bottom: 16px; }
+  .specimen pre { margin: 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: var(--ink); }
+  .specimen .k { color: var(--muted); }
+  .specimen .s { color: var(--moss); }
+  .routed { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--rule); font: 13px/1.6 var(--mono); }
+  .routed b { font-weight: 500; color: var(--rust); display: inline-block; min-width: 18ch; }
+  .routed b.swap { animation: swap .5s ease; }
+  @keyframes swap { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: none; } }
+  .routed .ok { color: var(--moss); }
+
+  /* ---------- ledger strip ---------- */
+  .ledger { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule); }
+  .ledger div { padding: 22px 20px; border-right: 1px solid var(--rule); }
+  .ledger div:last-child { border-right: 0; }
+  .ledger b { display: block; font: 400 38px/1 var(--display); }
+  .ledger span { font: 12px/1.4 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  @media (max-width: 760px) { .ledger { grid-template-columns: repeat(2, 1fr); } .ledger div:nth-child(2) { border-right: 0; } .ledger div:nth-child(-n+2) { border-bottom: 1px solid var(--rule); } }
+
+  /* ---------- sections ---------- */
+  section.block { padding: 96px 0 24px; }
+  .sec-head { display: grid; grid-template-columns: 140px 1fr; gap: 28px; align-items: baseline; margin-bottom: 44px; }
+  @media (max-width: 760px) { .sec-head { grid-template-columns: 1fr; gap: 6px; } }
+  .sec-head .num { font: 500 13px/1 var(--mono); color: var(--rust); letter-spacing: .1em; }
+  h2 { font: 400 clamp(32px, 4vw, 48px)/1.05 var(--display); margin: 0; letter-spacing: -0.01em; }
+  .sec-head p { grid-column: 2; margin: 14px 0 0; color: var(--ink-soft); max-width: 60ch; }
+  @media (max-width: 760px) { .sec-head p { grid-column: 1; } }
+
+  /* notes */
+  .notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--rule); }
+  @media (max-width: 860px) { .notes { grid-template-columns: 1fr; } }
+  .note { padding: 30px 28px 34px 0; border-right: 1px solid var(--rule); margin-right: 28px; }
+  .note:last-child { border-right: 0; margin-right: 0; }
+  @media (max-width: 860px) { .note { border-right: 0; margin-right: 0; border-bottom: 1px solid var(--rule); } }
+  .note svg { width: 42px; height: 42px; color: var(--rust); }
+  .note h3 { font: 400 26px/1.15 var(--display); margin: 16px 0 10px; }
+  .note p { margin: 0; color: var(--ink-soft); font-size: 18px; }
+
+  /* specimens grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 18px; }
+  .spec { background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: 18px 18px 16px; position: relative; transition: transform .25s ease, box-shadow .25s ease; }
+  .spec:hover { transform: translateY(-3px) rotate(-0.4deg); box-shadow: var(--shadow); }
+  .spec .no { font: 11px/1 var(--mono); color: var(--muted); letter-spacing: .1em; }
+  .spec h4 { font: 400 22px/1.15 var(--display); margin: 8px 0 4px; }
+  .spec .latin { font-style: italic; color: var(--ink-soft); font-size: 16px; margin: 0 0 12px; }
+  .spec .yield { font: 13px/1.45 var(--mono); border-top: 1px dashed var(--rule); padding-top: 10px; }
+  .pill { display: inline-block; font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 4px 7px; border-radius: 2px; margin-top: 10px; margin-right: 6px; border: 1px solid currentColor; }
+  .pill.v { color: var(--moss); }
+  .pill.d { color: var(--muted); }
+  .pill.c { color: var(--rust); }
+  .legend { font: 13px/1.6 var(--mono); color: var(--muted); margin-top: 20px; }
+
+  /* self-host */
+  .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+  @media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
+  ol.trail { list-style: none; counter-reset: s; margin: 0; padding: 0; }
+  ol.trail li { counter-increment: s; position: relative; padding: 0 0 28px 64px; border-left: 1px dashed var(--rule); margin-left: 20px; }
+  ol.trail li:last-child { border-left-color: transparent; }
+  ol.trail li::before { content: counter(s); position: absolute; left: -21px; top: -4px; width: 42px; height: 42px; border-radius: 50%; background: var(--paper); border: 1px solid var(--ink); display: grid; place-items: center; font: 400 20px/1 var(--display); }
+  ol.trail h3 { font: 400 23px/1.2 var(--display); margin: 0 0 6px; }
+  ol.trail p { margin: 0; color: var(--ink-soft); font-size: 18px; }
+  ol.trail code { font-size: 14px; background: var(--paper-2); padding: 1px 5px; border-radius: 2px; }
+  .code { background: var(--ink); color: var(--paper); border-radius: 4px; padding: 22px 24px; font: 13.5px/1.75 var(--mono); overflow-x: auto; box-shadow: var(--shadow); }
+  @media (prefers-color-scheme: dark) { .code { background: #0c120e; color: var(--ink); border: 1px solid var(--rule); } }
+  .code .c { opacity: .55; }
+  .code .r { color: #e9a57f; }
+  .code-label { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 26px 0 10px; }
+  .code-label:first-child { margin-top: 0; }
+
+  /* etiquette */
+  .etiquette { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 48px; }
+  @media (max-width: 760px) { .etiquette { grid-template-columns: 1fr; } }
+  .etiquette div { padding: 20px 0; border-top: 1px solid var(--rule); }
+  .etiquette b { font: 400 20px/1.3 var(--display); display: block; margin-bottom: 4px; }
+  .etiquette p { margin: 0; color: var(--ink-soft); font-size: 17px; }
+
+  /* hosted */
+  .hosted { margin: 96px 0 0; padding: 44px; border: 1px solid var(--ink); display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: center; background: repeating-linear-gradient(-45deg, transparent 0 12px, rgba(180, 83, 42, 0.05) 12px 13px); }
+  @media (max-width: 760px) { .hosted { grid-template-columns: 1fr; padding: 28px; } }
+  .hosted h2 { font-size: 34px; }
+  .hosted p { margin: 10px 0 0; color: var(--ink-soft); max-width: 58ch; }
+  .btn { display: inline-block; font: 500 14px/1 var(--mono); text-decoration: none; padding: 14px 18px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); border-radius: 2px; white-space: nowrap; }
+  .btn:hover { background: var(--rust); border-color: var(--rust); color: var(--paper); }
+
+  footer { margin-top: 96px; padding: 28px 0 44px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 18px 28px; font: 13px/1.5 var(--mono); color: var(--muted); }
+  footer .grow { flex: 1; }
+
+  /* load reveal */
+  .rise { opacity: 0; transform: translateY(14px); animation: rise .8s cubic-bezier(.2, .7, .2, 1) forwards; }
+  .d1 { animation-delay: .05s; } .d2 { animation-delay: .15s; } .d3 { animation-delay: .28s; } .d4 { animation-delay: .42s; } .d5 { animation-delay: .6s; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  .js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .8s ease, transform .8s cubic-bezier(.2, .7, .2, 1); }
+  .js .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .rise, .reveal { opacity: 1; transform: none; animation: none; transition: none; }
+    .routed b.swap { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="mark" href="/" aria-label="Forager home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 16c0-7 5.4-11 12-11s12 4 12 11H4z" fill="var(--rust)"/><circle cx="11" cy="11" r="1.6" fill="var(--paper)"/><circle cx="19" cy="9" r="1.2" fill="var(--paper)"/><circle cx="22" cy="13" r="1" fill="var(--paper)"/><rect x="13" y="16" width="6" height="12" rx="3" fill="var(--ink)"/></svg>
+      Forager
+    </a>
+    <nav class="links">
+      <a class="hide-sm" href="#how">How it works</a>
+      <a class="hide-sm" href="#specimens">Providers</a>
+      <a href="#self-host">Self-host</a>
+      <a href="https://github.com/volkanger/forager" data-repo-link>GitHub</a>
+      <a href="/dashboard">Dashboard</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <div class="eyebrow rise d1">Open source · Cloudflare Workers</div>
+        <h1 class="rise d2">Free LLM tiers, <em>foraged</em> into one endpoint.</h1>
+        <p class="lede rise d3">Forager gathers the free API tiers of a dozen AI providers behind a single OpenAI-compatible URL on your own Cloudflare account, and counts every quota so you never pay a cent.</p>
+        <div class="cta rise d4">
+          <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/volkanger/forager" data-deploy-link>
+            <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare">
+          </a>
+          <a class="ghost" href="#how">Read the field guide ↓</a>
+        </div>
+        <p class="fine rise d5">Runs on the Workers Free plan. You bring your own provider keys.</p>
+      </div>
+
+      <figure class="specimen rise d4" aria-label="Example request routed by Forager">
+        <div class="tag"><span>Specimen Nº 001</span><span>POST /v1/chat</span></div>
+<pre><span class="k">$</span> curl https://forager.you.workers.dev/v1/chat/completions \
+  -H <span class="s">"Authorization: Bearer $FORAGER_KEY"</span> \
+  -d <span class="s">'{"model":"auto","messages":[{"role":"user","content":"hi"}]}'</span></pre>
+        <div class="routed" aria-live="polite">
+          <span class="ok">HTTP 200</span> · x-routed-via: <b id="via">groq/openai/gpt-oss-120b</b><br>
+          <span class="k">quota left this cycle</span> <span id="left">912 / 1,000 req</span>
+        </div>
+      </figure>
+    </section>
+
+    <div class="ledger reveal">
+      <div><b>$0</b><span>What it costs you</span></div>
+      <div><b>15</b><span>Free providers in the catalog</span></div>
+      <div><b>1</b><span>OpenAI-compatible URL</span></div>
+      <div><b>4</b><span>Quota cycles tracked: min · hr · day · month</span></div>
+    </div>
+
+    <section class="block" id="how">
+      <div class="sec-head reveal">
+        <span class="num">I. FIELD NOTES</span>
+        <h2>How it works</h2>
+        <p>Every free tier has its own limits, reset times and fine print. Forager keeps the ledger for you and only takes what's there.</p>
+      </div>
+      <div class="notes">
+        <article class="note reveal">
+          <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M24 42V18"/><path d="M24 26c-6 0-11-4-12-12 7 0 12 4 12 12z"/><path d="M24 20c5 0 9-3 10-10-6 0-10 3-10 10z"/><path d="M14 42h20"/></svg>
+          <h3>Gather</h3>
+          <p>Add a key for each free provider in the dashboard: Groq, Gemini, NVIDIA, Mistral, OpenRouter and more. Keys are encrypted and never shown again.</p>
+        </article>
+        <article class="note reveal">
+          <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="24" r="4"/><circle cx="38" cy="10" r="4"/><circle cx="38" cy="24" r="4"/><circle cx="38" cy="38" r="4"/><path d="M14 24h20M13 21l21-9M13 27l21 9"/></svg>
+          <h3>Route</h3>
+          <p>Ask for <code>auto</code>, <code>auto:coding</code> or a specific model. Forager picks the best model with quota left and fails over on rate limits, outages and timeouts.</p>
+        </article>
+        <article class="note reveal">
+          <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="10" width="32" height="30" rx="2"/><path d="M8 18h32M16 6v8M32 6v8"/><path d="M17 29l5 5 9-10"/></svg>
+          <h3>Stay at $0</h3>
+          <p>It counts requests, tokens and dollars per key in every cycle, stops at 90% of each limit, blocks paid models, and parks any key that hits a billing error.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="block" id="specimens">
+      <div class="sec-head reveal">
+        <span class="num">II. SPECIMENS</span>
+        <h2>What's in the catalog</h2>
+        <p>Free tiers change constantly. The catalog is data, not code: Forager refreshes OpenRouter's free list daily, and you can update limits without redeploying.</p>
+      </div>
+      <div class="grid" id="grid"></div>
+      <p class="legend">
+        <span class="pill v">tested</span> checked live, September 2026 ·
+        <span class="pill d">docs</span> from provider docs, not yet tested live ·
+        <span class="pill c">card on file</span> free tier unlocks with a payment method; you're never charged under quota
+      </p>
+    </section>
+
+    <section class="block" id="self-host">
+      <div class="sec-head reveal">
+        <span class="num">III. THE TRAIL</span>
+        <h2>Self-host in three steps</h2>
+        <p>Forager runs entirely on your own Cloudflare account. Nobody else sees your keys or your prompts.</p>
+      </div>
+      <div class="steps">
+        <ol class="trail reveal">
+          <li>
+            <h3>Deploy to Cloudflare</h3>
+            <p>Click the button. Cloudflare copies the repo to your GitHub and creates the Worker and its Durable Object. It asks for two secrets: <code>PROXY_API_KEY</code> (your router password) and <code>KEYSTORE_SECRET</code> (any random string, 16+ characters).</p>
+          </li>
+          <li>
+            <h3>Add your keys</h3>
+            <p>Open <code>/dashboard</code> on your Worker, connect with your router password, and add provider keys. Each one is tested as soon as you add it.</p>
+          </li>
+          <li>
+            <h3>Point your apps at it</h3>
+            <p>Use any OpenAI SDK or tool with your Worker's <code>/v1</code> URL. The <code>x-routed-via</code> header tells you which provider answered.</p>
+          </li>
+        </ol>
+        <div class="reveal">
+          <div class="code-label">Python · OpenAI SDK</div>
+<pre class="code"><span class="r">from</span> openai <span class="r">import</span> OpenAI
+
+client = OpenAI(
+    base_url=<span class="r">"https://forager.you.workers.dev/v1"</span>,
+    api_key=FORAGER_KEY,
+)
+reply = client.chat.completions.create(
+    model=<span class="r">"auto:coding"</span>,
+    messages=[{<span class="r">"role"</span>: <span class="r">"user"</span>, <span class="r">"content"</span>: <span class="r">"Write a haiku about moss"</span>}],
+)</pre>
+          <div class="code-label">Or from the command line</div>
+<pre class="code"><span class="c"># clone, set two secrets, deploy</span>
+git clone <span data-repo-text>https://github.com/volkanger/forager</span>
+cd forager && npm install
+openssl rand -hex 32 | npx wrangler secret put PROXY_API_KEY
+openssl rand -hex 32 | npx wrangler secret put KEYSTORE_SECRET
+npx wrangler deploy</pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="etiquette">
+      <div class="sec-head reveal">
+        <span class="num">IV. ETIQUETTE</span>
+        <h2>Forage responsibly</h2>
+      </div>
+      <div class="etiquette reveal">
+        <div><b>Use your own keys</b><p>One key per provider, used only by Forager. Stacking free accounts to multiply quota usually breaks a provider's terms.</p></div>
+        <div><b>Free tiers move</b><p>Limits and free models change without notice. Forager learns from errors and rate-limit headers, but check each provider's console now and then.</p></div>
+        <div><b>Read the fine print on data</b><p>Some free tiers (Gemini, Mistral, Kilo, OpenCode) may use prompts for training. Don't send anything private to them.</p></div>
+        <div><b>Keep billing off</b><p>No billing account on the Gemini project, auto-reload off on Ollama, and never buy credits on card-on-file providers. That's what keeps free at free.</p></div>
+      </div>
+    </section>
+
+    <aside class="hosted reveal" id="hosted">
+      <div>
+        <div class="eyebrow">Coming later</div>
+        <h2>A hosted Forager</h2>
+        <p>Sign up, bring your keys, and use <code>fora.ger.soy/v1</code> without deploying anything. Self-hosting will always stay free and fully featured.</p>
+      </div>
+      <a class="btn" href="https://github.com/volkanger/forager" data-repo-link>Watch on GitHub →</a>
+    </aside>
+  </main>
+
+  <footer>
+    <span class="grow">Forager · open source (MIT) · inspired by <a href="https://github.com/tashfeenahmed/freellmapi">FreeLLMAPI</a></span>
+    <a href="#self-host">Self-host</a>
+    <a href="/dashboard">Dashboard</a>
+    <a href="https://github.com/volkanger/forager" data-repo-link>GitHub</a>
+  </footer>
+</div>
+
+<script>
+(function () {
+  // Provider catalog shown on the page. "v" = tested live, "d" = from docs, "c" = card on file.
+  var specimens = [
+    ["Groq", "Velox groqensis", "gpt-oss-120b, Qwen 3.8", "~1,000 requests/day per model", "v"],
+    ["Google AI Studio", "Gemini flavescens", "Gemini Flash, Flash-Lite", "Free tier while billing is off", "d"],
+    ["NVIDIA NIM", "Nemotron silvestris", "Kimi K3, DeepSeek V4 Flash, GLM 5.3", "40 requests/minute", "v"],
+    ["Mistral", "Mistralis ventosa", "Codestral, Ministral 8B/14B", "$10/month of credit", "v"],
+    ["OpenRouter", "Liber itineris", ":free models, synced daily", "50 requests/day", "v"],
+    ["Zhipu AI", "Glm fulgens", "GLM-4.7 Flash, GLM-4.5 Flash", "~1M tokens/day per model", "v"],
+    ["Ollama Cloud", "Lama nubium", "gpt-oss, Nemotron, Gemma 4", "Weekly included usage", "v"],
+    ["Kilo Gateway", "Clavis absens", "Nemotron Ultra, Laguna, Step 3.7", "No key · 200 requests/hour", "v"],
+    ["LLM7", "Septima minor", "MiniMax M2.7, Codestral", "~100 requests/hour", "v"],
+    ["Cohere", "Cohaerens probatio", "Command A", "1,000 calls/month (trial key)", "v"],
+    ["Workers AI", "Nubes neuronalis", "gpt-oss-120b, GLM-4.7 Flash, Llama", "10,000 neurons/day", "v"],
+    ["SambaNova", "Samba celeris", "DeepSeek V3.1/V3.2, MiniMax M3", "20 requests/day per model", "d"],
+    ["Routeway", "Via libera", "DeepSeek V4 Flash, MiniMax M2.7", "200 requests/day", "d"],
+    ["Agnes AI", "Agnes promissa", "agnes-2.0-flash", "20 requests/minute", "d"],
+    ["Vercel AI Gateway", "Portae velocis", "Laguna S, Ling 3.0", "$5/month of credit", "c"]
+  ];
+  var label = { v: "tested", d: "docs", c: "card on file" };
+  var grid = document.getElementById("grid");
+  grid.innerHTML = specimens.map(function (s, i) {
+    return '<article class="spec reveal"><span class="no">Nº ' + String(i + 1).padStart(3, "0") + '</span>' +
+      '<h4>' + s[0] + '</h4><p class="latin">' + s[1] + '</p>' +
+      '<div class="yield">' + s[2] + '<br><span style="color:var(--muted)">' + s[3] + '</span></div>' +
+      '<span class="pill ' + s[4] + '">' + label[s[4]] + '</span></article>';
+  }).join("");
+
+  // Hero: cycle through providers the way "auto" does when quotas run low.
+  var routes = [
+    ["groq/openai/gpt-oss-120b", "912 / 1,000 req"],
+    ["nvidia/moonshotai/kimi-k3", "38 / 40 req/min"],
+    ["mistral/codestral-latest", "$9.61 / $10 credit"],
+    ["zhipu/glm-4.7-flash", "874K / 1M tokens"],
+    ["kilo/nemotron-3-ultra:free", "181 / 200 req/hr"],
+    ["ollama/gpt-oss:120b", "82% weekly left"]
+  ];
+  var via = document.getElementById("via"), left = document.getElementById("left"), n = 0;
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!still) setInterval(function () {
+    n = (n + 1) % routes.length;
+    via.classList.remove("swap"); void via.offsetWidth; via.classList.add("swap");
+    via.textContent = routes[n][0];
+    left.textContent = routes[n][1];
+  }, 2600);
+
+  // Scroll reveals.
+  var items = document.querySelectorAll(".reveal");
+  if ("IntersectionObserver" in window && !still) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+    }, { rootMargin: "0px 0px -8% 0px" });
+    items.forEach(function (el, i) { el.style.transitionDelay = (el.classList.contains("spec") ? (i % 6) * 60 : 0) + "ms"; io.observe(el); });
+  } else {
+    items.forEach(function (el) { el.classList.add("in"); });
+  }
+})();
+</script>
+</body>
+</html>
