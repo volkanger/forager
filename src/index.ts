@@ -56,6 +56,9 @@ export default {
       if (path === "/admin/probe" && request.method === "GET") return json(await tracker.probe());
       if (path === "/admin/interest" && request.method === "GET") return json(await tracker.interest());
       if (path === "/admin/interest/sync" && request.method === "POST") return json(await tracker.syncGitHub());
+      if (path === "/admin/interest/events" && request.method === "PATCH") {
+        return json(await tracker.adjustEvent((await request.json().catch(() => ({}))) as { day?: string; name?: string; delta?: number }));
+      }
       if (path === "/admin/waitlist") {
         if (request.method === "GET") return json(await tracker.waitlist());
         if (request.method === "DELETE") {

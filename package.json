@@ -20,19 +20,13 @@
   "cloudflare": {
     "bindings": {
       "PROXY_API_KEY": {
-        "description": "Your router password. Clients send it as `Authorization: Bearer …` and you paste it into the dashboard. Use a long random string, e.g. the output of `openssl rand -hex 32`, and keep a copy in your password manager."
+        "description": "Your router password: apps send it as a Bearer token, and you use it to sign in to /dashboard. Use a long random string (for example the output of openssl rand -hex 32) and save it in your password manager."
       },
       "KEYSTORE_SECRET": {
-        "description": "Encrypts the provider API keys you add in the dashboard. Any random string of **16+ characters** (e.g. `openssl rand -hex 32`). If you change it later, keys added in the dashboard must be re-added."
+        "description": "Encrypts the provider API keys you add in the dashboard. Any random string of 16+ characters (for example openssl rand -hex 32). If you change it later, keys added in the dashboard must be added again."
       },
       "AI_GATEWAY_ID": {
-        "description": "Name of the Cloudflare AI Gateway to log requests through. Optional: if it doesn't exist, Forager calls providers directly."
-      },
-      "MAX_ATTEMPTS": {
-        "description": "How many provider/model attempts one request may make before giving up."
-      },
-      "UPSTREAM_TIMEOUT_MS": {
-        "description": "Milliseconds to wait for a provider to start answering (slow providers have their own, longer limits)."
+        "description": "Optional. Name of a Cloudflare AI Gateway to log requests through. If it doesn't exist, Forager calls providers directly."
       },
       "TRACKER": {
         "description": "Durable Object that tracks free-quota usage per cycle and stores encrypted provider keys."

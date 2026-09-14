@@ -544,6 +544,17 @@ export class Tracker extends DurableObject<Env> {
     return { ok: true };
   }
 
+  /** Owner correction for event counts (e.g. removing test clicks). Never goes below zero. */
+  adjustEvent(input: { day?: string; name?: string; delta?: number }): { day: string; name: string; count: number } {
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(input.day ?? "") ? input.day! : periodId("day", Date.now(), "UTC");
+    const name = String(input.name ?? "");
+    const delta = Math.trunc(Number(input.delta ?? -1));
+    this.sql.exec(`UPDATE events SET count = MAX(0, count + ?) WHERE day = ? AND name = ?`, delta, day, name);
+    this.sql.exec(`DELETE FROM events WHERE count = 0`);
+    const row = this.sql.exec<{ count: number }>(`SELECT count FROM events WHERE day = ? AND name = ?`, day, name).toArray()[0];
+    return { day, name, count: row?.count ?? 0 };
+  }
+
   /** Public numbers for the landing page. Refreshes GitHub data when it's more than an hour old. */
   async publicStats(): Promise<{ stars: number | null; repo: string | null }> {
     const repo = this.env.GITHUB_REPO ?? null;
