@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Publishes the current commit of this (private) repo to the public volkanger/forager repo
-# as a single new commit, without the private history.
+# as a single new commit, without the private history. docs/internal/ and CLAUDE.md are excluded.
 set -euo pipefail
 
 PUBLIC_REPO="${PUBLIC_REPO:-volkanger/forager}"
@@ -19,6 +19,8 @@ gh repo clone "$PUBLIC_REPO" "$WORK/public" -- --quiet
 # Replace the public tree with this commit's tracked files.
 find "$WORK/public" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
 git archive HEAD | tar -x -C "$WORK/public"
+# Private-only files never go public.
+rm -rf "$WORK/public/docs/internal" "$WORK/public/CLAUDE.md"
 
 cd "$WORK/public"
 git add -A

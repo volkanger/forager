@@ -131,6 +131,10 @@ The MVP only knows what went through this router. Phase 2 syncs with each provid
 3. **Optional ping on demand.** Send a 1-token request to each header-based provider to read its remaining quota. Each ping costs one request of the daily quota.
 4. **Dashboard badge.** Mark providers with no usage API (Gemini, Cohere, NVIDIA) as "keep this key dedicated".
 
+## How it works inside
+
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) walks through a request step by step: routing, quota cycles, the failure policy, the Durable Object data model, key encryption, first-run setup, scheduled jobs and the cost model.
+
 ## Files
 
 - `src/index.ts`: HTTP routes, auth, the upstream call with failover, SSE usage tap
