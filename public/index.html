@@ -2,7 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<script>document.documentElement.classList.add("js")</script>
+<script>
+  document.documentElement.classList.add("js");
+  // Self-hosted copies: a fresh install goes straight to setup (Cloudflare's "Visit" link opens "/").
+  (function () {
+    var h = location.hostname;
+    if (h === "fora.ger.soy" || location.protocol === "file:") return;
+    fetch("/api/setup").then(function (r) { return r.ok ? r.json() : null; }).then(function (s) {
+      if (!s) return;
+      if (!s.claimed && !s.locked) { location.replace("/dashboard"); return; }
+      window.__foragerOwnInstall = true;
+      document.addEventListener("DOMContentLoaded", function () { var b = document.getElementById("own-install"); if (b) b.hidden = false; });
+      var b = document.getElementById("own-install"); if (b) b.hidden = false;
+    }).catch(function () {});
+  })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Forager · Free LLM tiers, foraged into one endpoint</title>
 <meta name="description" content="Forager is an open-source LLM router you deploy to your own Cloudflare account. One OpenAI-compatible endpoint that spreads requests across free provider tiers and stops before any limit, so you pay $0.">
@@ -54,6 +68,10 @@
   a:hover { color: var(--rust); }
   code, pre, .mono { font-family: var(--mono); }
   .wrap { position: relative; z-index: 1; max-width: 1160px; margin: 0 auto; padding: 0 28px; }
+
+  .own-install { position: relative; z-index: 2; background: var(--ink); color: var(--paper); font: 500 13px/1.4 var(--mono); text-align: center; padding: 10px 16px; }
+  .own-install a { color: var(--paper); text-decoration-color: var(--rust); }
+  .own-install[hidden] { display: none; }
 
   /* ---------- header ---------- */
   header.top { display: flex; align-items: center; gap: 28px; padding: 22px 0; border-bottom: 1px solid var(--rule); }
@@ -196,6 +214,7 @@
 </style>
 </head>
 <body>
+<div class="own-install" id="own-install" hidden>This is your own Forager. <a href="/dashboard">Open your dashboard →</a></div>
 <div class="wrap">
   <header class="top">
     <a class="mark" href="/" aria-label="Forager home">
