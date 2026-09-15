@@ -77,6 +77,8 @@ export interface SettleInput {
   /** key = every model on this key, route = this model on this key, model = this model on every key. */
   cooldownScope?: "key" | "route" | "model";
   reason?: string;
+  /** Repeat failures within an hour multiply the cooldown: ×1, ×10, ×60 (30 s → 5 min → 30 min). */
+  escalate?: boolean;
 }
 
 interface StatDelta {
@@ -128,8 +130,7 @@ export class Tracker extends DurableObject<Env> {
   private catalog: Catalog = DEFAULT_CATALOG;
   private openRouterFree: ModelDef[] = [];
   private counters = new Map<string, Counter>();
-  private cooldowns = new Map<string, { until: number; reason: string }>();
-  private dirty = new Set<string>();
+  private cooldowns = new Map<string, { until: number; reason: string }>();  private dirty = new Set<string>();
   private pendingStats = new Map<string, StatDelta>();
   private roundRobin = new Map<string, number>();
   private flushScheduled = false;
@@ -149,6 +150,7 @@ export class Tracker extends DurableObject<Env> {
     ctx.blockConcurrencyWhile(async () => {
       this.sql.exec(`CREATE TABLE IF NOT EXISTS counters (id TEXT PRIMARY KEY, data TEXT NOT NULL) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS cooldowns (id TEXT PRIMARY KEY, until INTEGER NOT NULL, reason TEXT NOT NULL) WITHOUT ROWID`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS strikes (id TEXT PRIMARY KEY, count INTEGER NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS stats (
         day TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
         requests INTEGER NOT NULL DEFAULT 0, ok INTEGER NOT NULL DEFAULT 0,
@@ -321,6 +323,8 @@ export class Tracker extends DurableObject<Env> {
     // Request stays counted even on failure (providers count them too); tokens/spend are corrected.
     for (const scope of r.scopes) this.bump(scope, now, 0, inTok + outTok - (r.estIn + r.estOut), usd - r.estUsd);
 
+    if (s.ok) this.sql.exec(`DELETE FROM strikes WHERE id = ?`, `c:${r.provider}/${r.model}`);
+
     if (s.cooldownMs && s.cooldownMs > 0) {
       const id =
         s.cooldownScope === "key"
@@ -328,7 +332,20 @@ export class Tracker extends DurableObject<Env> {
           : s.cooldownScope === "model"
             ? `c:${r.provider}/${r.model}`
             : `c:${r.routeId}`;
-      const until = now + s.cooldownMs;
+      let cooldownMs = s.cooldownMs;
+      if (s.escalate) {
+        // Stored in SQL: the object can be evicted between requests, which would reset an in-memory count.
+        const prev = this.sql.exec<{ count: number; at: number }>(`SELECT count, at FROM strikes WHERE id = ?`, id).toArray()[0];
+        const count = prev && now - prev.at < 3_600_000 ? prev.count + 1 : 1;
+        this.sql.exec(
+          `INSERT INTO strikes (id, count, at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET count = excluded.count, at = excluded.at`,
+          id,
+          count,
+          now,
+        );
+        cooldownMs *= [1, 10, 60][Math.min(count, 3) - 1];
+      }
+      const until = now + cooldownMs;
       const reason = s.reason ?? `HTTP ${s.status}`;
       const existing = this.cooldowns.get(id);
       if (!existing || existing.until < until) {
@@ -483,9 +500,11 @@ export class Tracker extends DurableObject<Env> {
       const like = `%${match.replace(/[%_]/g, "")}%`;
       this.sql.exec(`DELETE FROM counters WHERE id LIKE ?`, like);
       this.sql.exec(`DELETE FROM cooldowns WHERE id LIKE ?`, like);
+      this.sql.exec(`DELETE FROM strikes WHERE id LIKE ?`, like);
     } else {
       this.sql.exec(`DELETE FROM counters`);
       this.sql.exec(`DELETE FROM cooldowns`);
+      this.sql.exec(`DELETE FROM strikes`);
     }
     return { cleared };
   }
@@ -881,6 +900,7 @@ export class Tracker extends DurableObject<Env> {
     const cutoff = periodId("day", Date.now() - 90 * 86_400_000, "UTC");
     this.sql.exec(`DELETE FROM stats WHERE day < ?`, cutoff);
     this.sql.exec(`DELETE FROM cooldowns WHERE until < ?`, Date.now());
+    this.sql.exec(`DELETE FROM strikes WHERE at < ?`, Date.now() - 3_600_000);
     await this.syncOpenRouter().catch((e) => console.error("openrouter sync failed", e));
     await this.syncGitHub().catch((e) => console.error("github sync failed", e));
   }

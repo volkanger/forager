@@ -26,6 +26,7 @@ export interface Env {
 
   MAX_ATTEMPTS?: string;
   UPSTREAM_TIMEOUT_MS?: string;
+  UPSTREAM_STREAM_TIMEOUT_MS?: string;
 
   /** Provider key secrets are looked up by name from the catalog (GROQ_API_KEY, ...). */
   [secret: string]: unknown;

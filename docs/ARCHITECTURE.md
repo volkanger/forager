@@ -66,7 +66,7 @@ landing ─── /api/* ──────►           ▼                 ▼
    - **Through AI Gateway** when the provider has a `gateway` route and the account ID resolved: `compat` providers post to `…/compat/chat/completions` with `model: "<slug>/<id>"`; `path` providers use their own gateway path.
    - **Directly** (`directUrl`) otherwise.
    - If the gateway itself rejects a request (an `AiGatewayError` body), the Worker retries that same model directly and bypasses the gateway for 10 minutes.
-5. **Fetch** with a timeout on response headers: the provider's `timeoutMs`, or `UPSTREAM_TIMEOUT_MS` (30 s). Streams run as long as needed after headers arrive.
+5. **Fetch** with a timeout on response headers: the provider's `timeoutMs`, else `UPSTREAM_STREAM_TIMEOUT_MS` (15 s) for streaming requests or `UPSTREAM_TIMEOUT_MS` (30 s) for non-streaming ones, whose headers only arrive after the full answer. Streams run as long as needed after headers arrive.
 6. **On failure**: `failurePolicy()` decides the cooldown (table below). The Worker calls `settle()` so tokens are refunded (the request stays counted), excludes the key or model, and loops. **Fallback only happens before the first byte is sent.**
 7. **On success**:
    - Rate-limit headers that report zero remaining (`x-ratelimit-remaining-*`) become a cooldown until their reset.
@@ -86,7 +86,7 @@ landing ─── /api/* ──────►           ▼                 ▼
 | 401 / other 403 | 1 h | key |
 | 402 | 24 h | key |
 | 404 | 6 h | model |
-| 408, 5xx, network error, timeout | 30 s | model |
+| 408, 5xx, network error, timeout | 30 s, then 5 min, then 30 min for repeats within an hour (reset by a success; strikes in the `strikes` table) | model |
 | 400, 413, 422… | none; try another model | – |
 
 Cooldown ids: `c:<provider>#<k>` (key), `c:<provider>/<model>#<k>` (route), `c:<provider>/<model>` (model). They're persisted immediately, so a restart doesn't forget a 24 h billing pause.
@@ -111,6 +111,7 @@ SQLite tables (all `WITHOUT ROWID` so an upsert writes one row):
 |---|---|
 | `counters (id, data)` | Per scope id, JSON `{minute:{p,req,tok,usd}, hour:…, day:…, month:…}` where `p` is the cycle id. A stale `p` reads as zero. |
 | `cooldowns (id, until, reason)` | Active pauses |
+| `strikes (id, count, at)` | Repeat timeouts/5xx per model, for escalating cooldowns; cleared by a success or after an hour |
 | `stats (day, provider, model, requests, ok, tok_in, tok_out, usd, latency_ms)` | Daily per-model stats (kept 90 days) |
 | `provider_keys (id, provider, label, last4, ciphertext, iv, created_at)` | Provider keys added in the dashboard, AES-256-GCM sealed |
 | `waitlist (email, created_at, source)` | Hosted-beta signups |

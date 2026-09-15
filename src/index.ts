@@ -222,7 +222,9 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
   const estIn = estimateTokens(JSON.stringify(body.messages)) + (needs.tools ? estimateTokens(JSON.stringify(body.tools)) : 0);
   const estOut = Math.min(Number(body.max_tokens ?? body.max_completion_tokens ?? 1024) || 1024, 4096);
   const maxAttempts = Number(env.MAX_ATTEMPTS ?? 6);
-  const defaultTimeoutMs = Number(env.UPSTREAM_TIMEOUT_MS ?? 30_000);
+  // The timeout covers response headers only. Streams send headers before the first token, so they
+  // get a shorter wait; non-streaming headers arrive only after the whole answer is generated.
+  const defaultTimeoutMs = stream ? Number(env.UPSTREAM_STREAM_TIMEOUT_MS ?? 15_000) : Number(env.UPSTREAM_TIMEOUT_MS ?? 30_000);
 
   const account = await cloudflareAccount(env);
   const exclude: string[] = [];
@@ -266,7 +268,7 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     } catch (e) {
       clearTimeout(timer);
       const reason = abort.signal.aborted ? `timeout after ${timeoutMs}ms` : `network error: ${e instanceof Error ? e.message : e}`;
-      await tracker.settle({ route, ok: false, status: 599, latencyMs: Date.now() - started, cooldownMs: 30_000, cooldownScope: "model", reason });
+      await tracker.settle({ route, ok: false, status: 599, latencyMs: Date.now() - started, cooldownMs: 30_000, cooldownScope: "model", reason, escalate: true });
       exclude.push(`${route.provider}/${route.model}`);
       attempts.push({ route: route.routeId, status: 599, error: reason });
       continue;
@@ -293,6 +295,7 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
         cooldownMs: policy.cooldownMs,
         cooldownScope: policy.scope,
         reason: `HTTP ${res.status}`,
+        escalate: res.status === 408 || res.status >= 500,
       });
       exclude.push(policy.skipModel ? `${route.provider}/${route.model}` : route.routeId);
       attempts.push({ route: route.routeId, status: res.status, error: text.slice(0, 300) });

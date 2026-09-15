@@ -28,7 +28,8 @@
     "AI_GATEWAY_ID": "forager"
     // Optional overrides (defaults in code):
     //   "MAX_ATTEMPTS": "6"             – provider/model attempts per request
-    //   "UPSTREAM_TIMEOUT_MS": "30000"  – wait for a provider to start answering
+    //   "UPSTREAM_TIMEOUT_MS": "30000"  – wait for a provider to start answering (non-streaming)
+    //   "UPSTREAM_STREAM_TIMEOUT_MS": "15000" – same, for streaming requests
     //   "GATEWAY_CACHE_TTL": "3600"     – AI Gateway caches identical prompts (saves quota)
   }
 
