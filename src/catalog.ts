@@ -93,7 +93,7 @@ const groqLimits = (rpd: number, tpm: number, tpd?: number): Limit[] => [
 ];
 
 export const DEFAULT_CATALOG: Catalog = {
-  version: "2026-09-14",
+  version: "2026-09-15",
   safetyMargin: 0.9,
   // Each chat request costs ~1 Worker request + 2 Durable Object requests.
   // Workers Free = 100k requests/day, DO Free = 100k requests/day.
@@ -158,8 +158,11 @@ export const DEFAULT_CATALOG: Catalog = {
         { id: "qwen/qwen3.8-27b", tags: ["smart", "tools", "coding"], priority: 85, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
         { id: "qwen/qwen3.6-27b", tags: ["tools", "coding"], priority: 75, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
         { id: "openai/gpt-oss-20b", tags: ["fast", "tools", "reasoning"], priority: 70, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
-        { id: "groq/compound", tags: ["smart", "search"], priority: 60, limits: groqLimits(250, 70_000) },
-        { id: "groq/compound-mini", tags: ["fast", "search"], priority: 55, limits: groqLimits(250, 70_000) },
+        // Tested 2026-09-15: any prompt that triggers web search returns 413 "Request Entity Too Large" when not
+        // streaming. Streaming sends the whole reply (answer after </think>) as delta.reasoning, then ends with a
+        // 413 error event instead of finish_reason. Prompts without search work. Kept out of auto:smart/fast.
+        { id: "groq/compound", tags: ["search"], priority: 60, limits: groqLimits(250, 70_000) },
+        { id: "groq/compound-mini", tags: ["search"], priority: 55, limits: groqLimits(250, 70_000) },
       ],
     },
     {

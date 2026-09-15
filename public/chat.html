@@ -348,7 +348,7 @@
 
     controller = new AbortController();
     setBusy(true);
-    var started = Date.now();
+    var started = Date.now(), streamError = "";
     api("/v1/chat/completions", {
       method: "POST",
       signal: controller.signal,
@@ -367,6 +367,20 @@
         });
       }
       var reader = res.body.getReader(), decoder = new TextDecoder(), buffer = "", pending = false;
+      var answer = "", thought = "";
+      // Some models wrap thinking in <think> tags inside content; Groq Compound streams the whole reply,
+      // answer included, as reasoning with the answer after </think>. Split both into thinking and answer.
+      function split() {
+        var a = answer, t = thought;
+        var open = a.match(/^\s*<think>([\s\S]*?)(<\/think>|$)/);
+        if (open) { t += open[1]; a = a.slice(open[0].length); }
+        if (!a.trim()) {
+          var end = t.lastIndexOf("</think>");
+          if (end >= 0) { a = t.slice(end + 8); t = t.slice(0, end); }
+        }
+        reply.reasoning = t.replace(/^\s*<think>/, "").trim();
+        reply.content = a.replace(/^\s+/, "");
+      }
       function paint() {
         pending = false;
         bodyEl.innerHTML = markdown(reply.content);
@@ -389,12 +403,14 @@
             try {
               var ev = JSON.parse(data);
               if (ev.usage) reply.meta.tokens = (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0);
+              if (ev.error) streamError = ev.error.message || String(ev.error);
               (ev.choices || []).forEach(function (c) {
                 var d = c.delta || {};
-                if (typeof d.content === "string") reply.content += d.content;
+                if (typeof d.content === "string") answer += d.content;
                 var r = d.reasoning_content || d.reasoning;
-                if (typeof r === "string") reply.reasoning += r;
+                if (typeof r === "string") thought += r;
               });
+              split();
             } catch (e) {}
           });
           if (!pending) { pending = true; requestAnimationFrame(paint); }
@@ -403,6 +419,8 @@
       }
       return pump();
     }).then(function () {
+      // Groq Compound ends a complete answer with a 413 error event, so errors only count without an answer.
+      if (!reply.content && streamError) throw new Error(streamError);
       if (!reply.content && !reply.reasoning) throw new Error("The provider returned an empty answer. Try again or pick another model.");
     }).catch(function (e) {
       if (e.name === "AbortError") { reply.meta.stopped = true; if (!reply.content) reply.content = "_Stopped._"; return; }
