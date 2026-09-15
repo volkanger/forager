@@ -4,81 +4,156 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Forager · Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 16c0-7 5.4-11 12-11s12 4 12 11H4z' fill='%23b4532a'/%3E%3Crect x='13' y='16' width='6' height='12' rx='3' fill='%231f3b2c'/%3E%3C/svg%3E">
 <style>
   :root {
-    --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --line: #e3e1d9;
-    --ok: #2f7d4f; --warn: #b7791f; --bad: #b83a3a; --accent: #f38020; --bar: #ecebe5;
+    --paper: #f3ede0; --paper-2: #ebe3d2; --card: #faf6ec; --ink: #1f3b2c; --ink-soft: #4a5d4f; --muted: #7a7563;
+    --rule: #cfc4ab; --rust: #b4532a; --rust-soft: #e7c9b5; --moss: #6f8a4c; --amber: #b7791f; --bar: #e4dac4;
+    --display: "Young Serif", "Iowan Old Style", Georgia, serif;
+    --body: "Newsreader", "Iowan Old Style", Georgia, serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ecebe6; --muted: #9c9a92; --line: #33322e; --bar: #2c2b28; }
+    :root { --paper: #141c17; --paper-2: #1a241d; --card: #1d2a21; --ink: #e8e1cf; --ink-soft: #c2bda9; --muted: #8f8a78;
+      --rule: #33443a; --rust: #e0845a; --rust-soft: #3d2a20; --moss: #9bb57a; --amber: #d9a441; --bar: #2a382e; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
-  header h1 { font-size: 16px; margin: 0 auto 0 0; letter-spacing: -0.01em; }
-  header h1 span { color: var(--accent); }
-  main { max-width: 1180px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
-  input, textarea, button { font: inherit; color: inherit; }
-  input, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
-  button { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button:hover { filter: brightness(0.97); }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 14px; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .stat b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-  .stat small { color: var(--muted); }
-  .providers { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
-  .prov { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.5 var(--body); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration-color: var(--rust); text-underline-offset: 3px; }
+  code, pre { font-family: var(--mono); }
+  code { font-size: 13px; background: var(--paper-2); padding: 1px 5px; border-radius: 2px; }
+
+  /* layout */
+  .app { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: 100vh; }
+  .side { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; border-right: 1px solid var(--rule); background: var(--paper-2); padding: 16px 0; }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 0 18px 16px; font: 400 22px/1 var(--display); text-decoration: none; border-bottom: 1px solid var(--rule); margin-bottom: 12px; }
+  .brand svg { width: 24px; height: 24px; }
+  .brand small { font: 500 10px/1 var(--mono); color: var(--rust); letter-spacing: .12em; text-transform: uppercase; }
+  .nav { display: flex; flex-direction: column; padding: 0 10px; overflow-y: auto; flex: 1; }
+  .nav a { display: block; padding: 7px 10px; border-radius: 3px; text-decoration: none; color: var(--ink-soft); font: 13px/1.3 var(--mono); }
+  .nav a:hover { background: var(--card); color: var(--ink); }
+  .nav a.chat { margin: 0 0 10px; background: var(--ink); color: var(--paper); font-weight: 500; }
+  .nav a.chat:hover { background: var(--rust); color: var(--paper); }
+  .nav .label { font: 500 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 12px 10px 6px; }
+  .side-foot { padding: 12px 18px 0; border-top: 1px solid var(--rule); font: 12px/1.7 var(--mono); color: var(--muted); }
+  .side-foot a { color: var(--ink-soft); }
+  .content { min-width: 0; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--rule); background: var(--paper); position: sticky; top: 0; z-index: 3; }
+  header h1 { font: 400 22px/1 var(--display); margin: 0; }
+  header #status { margin-right: auto; }
+  header #key { width: 240px; }
+  @media (max-width: 860px) { header #status { order: 9; flex-basis: 100%; margin: 0; } header #key { flex: 1; width: auto; min-width: 140px; } }
+  .menu-toggle { display: none; }
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; }
+    .side { display: none; }
+    .side.open { display: flex; position: fixed; inset: 0 25% 0 0; z-index: 10; box-shadow: 0 0 40px rgba(0,0,0,.35); }
+    .menu-toggle { display: inline-block; }
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; }
+
+  /* controls */
+  input, textarea, button, select { font: inherit; color: inherit; }
+  input, textarea, select { background: var(--card); border: 1px solid var(--rule); border-radius: 2px; padding: 7px 10px; font: 14px/1.4 var(--mono); }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--rust); outline-offset: 1px; }
+  button { background: var(--card); border: 1px solid var(--rule); border-radius: 2px; padding: 7px 12px; cursor: pointer; font: 500 13px/1.2 var(--mono); }
+  button:hover { border-color: var(--rust); color: var(--rust); }
+  button.primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  button.primary:hover { background: var(--rust); border-color: var(--rust); color: var(--paper); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.small { padding: 3px 9px; font-size: 12px; }
+
+  /* sections */
+  section { background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: 18px 20px; }
+  h2 { font: 400 22px/1.2 var(--display); color: var(--ink); margin: 0 0 14px; }
+  .note { color: var(--muted); font: 12.5px/1.55 var(--mono); margin: 0 0 10px; }
+  .empty { color: var(--muted); }
+  .tags { color: var(--muted); font: 11.5px/1.4 var(--mono); }
+  #status { color: var(--muted); font: 12px var(--mono); }
+  .ok-text { color: var(--moss); } .bad-text { color: var(--rust); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; border-top: 1px solid var(--rule); }
+  .stat { padding: 14px 14px 12px 0; border-bottom: 1px solid var(--rule); }
+  .stat b { display: block; font: 400 30px/1.1 var(--display); font-variant-numeric: tabular-nums; margin: 4px 0; }
+  .stat small { color: var(--muted); font: 11.5px/1.4 var(--mono); }
+
+  .providers { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .prov { border: 1px solid var(--rule); border-radius: 3px; padding: 14px; background: var(--paper); }
   .prov.off { opacity: 0.55; }
-  .prov h3 { margin: 0 0 4px; font-size: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .badge { font-size: 11px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); font-weight: 500; }
-  .badge.ok { color: var(--ok); border-color: currentColor; }
-  .badge.bad { color: var(--bad); border-color: currentColor; }
-  .note { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
-  .meter { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 6px 0; font-size: 12px; }
-  .meter .track { grid-column: 1 / -1; height: 6px; background: var(--bar); border-radius: 99px; overflow: hidden; }
-  .meter .fill { height: 100%; background: var(--ok); }
-  .meter .fill.warn { background: var(--warn); }
-  .meter .fill.bad { background: var(--bad); }
+  .prov h3 { margin: 0 0 6px; font: 400 18px/1.25 var(--display); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .badge { font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; padding: 4px 7px; border-radius: 2px; border: 1px solid var(--rule); color: var(--muted); }
+  .badge.ok { color: var(--moss); border-color: currentColor; }
+  .badge.bad { color: var(--rust); border-color: currentColor; }
+  .meter { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 7px 0; font: 11.5px/1.4 var(--mono); }
+  .meter .track { grid-column: 1 / -1; height: 5px; background: var(--bar); border-radius: 1px; overflow: hidden; }
+  .meter .fill { height: 100%; background: var(--moss); }
+  .meter .fill.warn { background: var(--amber); }
+  .meter .fill.bad { background: var(--rust); }
   .meter span:last-of-type { color: var(--muted); font-variant-numeric: tabular-nums; }
   details { margin-top: 8px; }
-  summary { cursor: pointer; color: var(--muted); font-size: 12px; }
-  .model { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); font: 12px var(--mono); }
+  .model { border-top: 1px dashed var(--rule); padding-top: 8px; margin-top: 8px; }
   .model code { font-size: 12px; }
-  .tags { color: var(--muted); font-size: 11px; }
+
   .table-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font: 13px/1.45 var(--mono); font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
   td.num, th.num { text-align: right; }
+  td.wrap { white-space: normal; }
+  td b { font: 400 15px/1.3 var(--display); }
+
   .play { display: grid; gap: 10px; }
   .play-row { display: flex; gap: 10px; flex-wrap: wrap; }
   .play-row input { flex: 1; min-width: 200px; }
   textarea { width: 100%; min-height: 80px; resize: vertical; }
-  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 420px; overflow: auto; font-size: 12px; }
-  .empty { color: var(--muted); }
-  #status { color: var(--muted); font-size: 12px; }
-  body.setup-mode main > section:not(#setup), body.setup-mode #key, body.setup-mode #save, body.setup-mode #refresh { display: none; }
+  pre { background: var(--paper); border: 1px solid var(--rule); border-radius: 2px; padding: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 420px; overflow: auto; font-size: 12px; }
+
   .key-form { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(200px, 2fr) auto; gap: 10px; margin-bottom: 14px; }
   @media (max-width: 760px) { .key-form { grid-template-columns: 1fr; } }
-  select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
-  .keychip { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 99px; padding: 1px 4px 1px 9px; margin: 2px 6px 2px 0; font-size: 12px; }
-  .keychip button { border: 0; background: transparent; padding: 0 6px; color: var(--bad); }
-  button.small { padding: 3px 9px; font-size: 12px; }
-  .ok-text { color: var(--ok); } .bad-text { color: var(--bad); }
-  td.wrap { white-space: normal; }
+  .keychip { white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--rule); border-radius: 99px; padding: 1px 4px 1px 9px; margin: 2px 6px 2px 0; font: 12px var(--mono); background: var(--paper); }
+  .keychip button { border: 0; background: transparent; padding: 0 6px; color: var(--rust); }
+
+  /* first-run setup */
+  #setup { border-color: var(--ink); }
+  body.setup-mode .side, body.setup-mode main > section:not(#setup), body.setup-mode #key, body.setup-mode #save, body.setup-mode #refresh, body.setup-mode .menu-toggle { display: none; }
+  body.setup-mode .app { grid-template-columns: 1fr; }
 </style>
 </head>
 <body>
+<div class="app">
+<aside class="side" id="side">
+  <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 16c0-7 5.4-11 12-11s12 4 12 11H4z" fill="var(--rust)"/><circle cx="11" cy="11" r="1.6" fill="var(--paper)"/><circle cx="19" cy="9" r="1.2" fill="var(--paper)"/><rect x="13" y="16" width="6" height="12" rx="3" fill="var(--ink)"/></svg>Forager <small>Dashboard</small></a>
+  <nav class="nav" id="nav">
+    <a class="chat" href="/chat">Open chat →</a>
+    <div class="label">Keys</div>
+    <a href="#router-keys-section">Your API keys</a>
+    <a href="#provider-keys">Provider keys</a>
+    <div class="label">Usage</div>
+    <a href="#today">Today</a>
+    <a href="#providers-section">Providers &amp; quotas</a>
+    <a href="#cooldowns-section">Cooldowns</a>
+    <a href="#models-section">Today by model</a>
+    <div class="label">Tools</div>
+    <a href="#playground">Playground</a>
+    <a href="#interest">Interest</a>
+    <a href="#waitlist-section">Waitlist</a>
+    <a href="#maintenance">Maintenance</a>
+  </nav>
+  <div class="side-foot"><a href="/">Home</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div>
+</aside>
+<div class="content">
 <header>
-  <h1><a href="/" style="color:inherit;text-decoration:none"><span>●</span> Forager</a></h1>
-  <input id="key" type="password" placeholder="Your Forager API key" autocomplete="off" size="28">
+  <button class="menu-toggle" id="menu" aria-label="Show navigation">☰</button>
+  <h1>Dashboard</h1>
+  <span id="status"></span>
+  <input id="key" type="password" placeholder="Your Forager API key" autocomplete="off" size="26">
   <button class="primary" id="save">Connect</button>
   <button id="refresh">Refresh</button>
-  <a href="/chat" style="color:inherit;font-size:13px">Open chat →</a>
-  <span id="status"></span>
-  
 </header>
 <main>
   <section id="setup" hidden>
@@ -112,12 +187,12 @@
     </div>
     <div class="table-wrap" id="rk-table"></div>
   </section>
-  <section>
+  <section id="today">
     <h2>Today (UTC)</h2>
     <div class="stats" id="stats"><p class="empty">Enter your Forager API key above to load usage.</p></div>
   </section>
 
-  <section>
+  <section id="provider-keys">
     <h2>Provider keys</h2>
     <div class="key-form">
       <select id="kprovider" aria-label="Provider"></select>
@@ -129,22 +204,22 @@
     <div class="table-wrap" id="keys"></div>
   </section>
 
-  <section>
+  <section id="providers-section">
     <h2>Providers &amp; quota cycles</h2>
     <div class="providers" id="providers"></div>
   </section>
 
-  <section>
+  <section id="cooldowns-section">
     <h2>Cooldowns</h2>
     <div class="table-wrap" id="cooldowns"></div>
   </section>
 
-  <section>
+  <section id="models-section">
     <h2>Today by model</h2>
     <div class="table-wrap" id="models"></div>
   </section>
 
-  <section>
+  <section id="playground">
     <h2>Playground</h2>
     <div class="play">
       <div class="play-row">
@@ -156,7 +231,7 @@
     </div>
   </section>
 
-  <section>
+  <section id="interest">
     <h2>Interest</h2>
     <div class="stats" id="interest-stats"><p class="empty">Loading…</p></div>
     <div class="play-row" style="align-items:center;margin-top:12px">
@@ -175,7 +250,7 @@
     <div class="table-wrap" id="wl-table" style="margin-top:12px"></div>
   </section>
 
-  <section>
+  <section id="maintenance">
     <h2>Maintenance</h2>
     <div class="play-row">
       <button id="sync">Sync OpenRouter free models</button>
@@ -185,6 +260,8 @@
     <pre id="admin" class="empty" style="margin-top:12px">Maintenance output shows here.</pre>
   </section>
 </main>
+</div>
+</div>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
@@ -492,6 +569,8 @@
     loadInterest();
     loadRouterKeys();
   };
+  $("menu").onclick = function () { $("side").classList.toggle("open"); };
+  $("nav").addEventListener("click", function (ev) { if (ev.target.closest("a")) $("side").classList.remove("open"); });
   $("refresh").onclick = function () { load(); loadKeys(); loadWaitlist(); loadInterest(); loadRouterKeys(); };
 
   $("send").onclick = function () {
