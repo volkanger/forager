@@ -596,6 +596,17 @@ export class Tracker extends DurableObject<Env> {
     return { ok: true };
   }
 
+  /** Public self-serve removal. Same reply whether or not the email was listed; shares the signup rate limit. */
+  leaveWaitlist(input: { email: string; client: string }): { ok: true } | { error: string; status: number } {
+    const now = Date.now();
+    const recent = (this.waitlistHits.get(input.client) ?? []).filter((t) => now - t < 3_600_000);
+    if (recent.length >= 5) return { error: "Too many requests from your network. Try again later.", status: 429 };
+    recent.push(now);
+    this.waitlistHits.set(input.client, recent);
+    this.sql.exec(`DELETE FROM waitlist WHERE email = ?`, input.email);
+    return { ok: true };
+  }
+
   waitlist(): { count: number; entries: { email: string; createdAt: number; source: string }[] } {
     const entries = this.sql
       .exec<{ email: string; created_at: number; source: string }>(`SELECT email, created_at, source FROM waitlist ORDER BY created_at DESC`)

@@ -80,6 +80,9 @@
   .star:hover { color: var(--rust); border-color: var(--rust); }
   .star:hover .count { border-color: var(--rust); }
   .poll-link { flex-basis: 100%; font: 13px/1.5 var(--mono); margin: 4px 0 0; }
+  .privacy { flex-basis: 100%; font: 12px/1.55 var(--mono); color: var(--muted); margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed var(--rule); }
+  .privacy button { font: inherit; color: var(--ink-soft); background: none; border: 0; padding: 0; text-decoration: underline; text-decoration-color: var(--rust); text-underline-offset: 3px; cursor: pointer; }
+  .privacy button:hover { color: var(--rust); }
   .cta .ghost { font: 500 14px/1 var(--mono); text-decoration: none; border-bottom: 1px solid var(--rust); padding-bottom: 4px; }
   .fine { font: 400 13px/1.5 var(--mono); color: var(--muted); margin-top: 18px; }
 
@@ -352,6 +355,7 @@ npx wrangler deploy</pre>
         <button class="btn" type="submit">Join the waitlist →</button>
         <p class="msg" id="wl-msg" role="status">One email when the hosted beta opens. No spam, never shared.</p>
         <p class="poll-link"><a href="https://github.com/volkanger/forager/discussions/2" data-track="poll_click">Or vote in the GitHub poll →</a></p>
+        <p class="privacy" id="wl-privacy"><b>Privacy:</b> we keep only your email, the date you joined and the site you signed up from, and use them only to email you when hosted Forager opens. Never shared or sold. This page sets no cookies and doesn't store IP addresses. <button type="button" id="wl-mode">Remove my email</button></p>
       </form>
     </aside>
   </main>
@@ -425,6 +429,19 @@ npx wrangler deploy</pre>
 
   // Waitlist signup. Always posts to fora.ger.soy, so self-hosted copies of this page still reach the list.
   var form = document.getElementById("waitlist");
+  var removing = false;
+  function setMode(remove) {
+    removing = remove;
+    form.querySelector("button[type=submit]").textContent = remove ? "Remove my email" : "Join the waitlist →";
+    document.getElementById("wl-mode").textContent = remove ? "Join instead" : "Remove my email";
+  }
+  var modeBtn = document.getElementById("wl-mode");
+  if (modeBtn) modeBtn.addEventListener("click", function () {
+    setMode(!removing);
+    var msg = document.getElementById("wl-msg");
+    msg.className = "msg"; msg.textContent = removing ? "Enter the email you signed up with." : "One email when the hosted beta opens. No spam, never shared.";
+    form.email.focus();
+  });
   if (form) form.addEventListener("submit", function (ev) {
     ev.preventDefault();
     var msg = document.getElementById("wl-msg"), btn = form.querySelector("button");
@@ -432,16 +449,18 @@ npx wrangler deploy</pre>
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
       msg.className = "msg err"; msg.textContent = "Please enter a valid email address."; form.email.focus(); return;
     }
-    btn.disabled = true; msg.className = "msg"; msg.textContent = "Adding you…";
+    btn.disabled = true; msg.className = "msg"; msg.textContent = removing ? "Removing…" : "Adding you…";
     fetch("https://fora.ger.soy/api/waitlist", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: email, website: form.website.value, source: location.host || "file" })
+      body: JSON.stringify({ email: email, website: form.website.value, source: location.host || "file", action: removing ? "remove" : "join" })
     }).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
       .then(function (r) {
         if (!r.ok) throw new Error(r.body && r.body.error || "Something went wrong.");
-        msg.className = "msg ok"; msg.textContent = "You're on the list. We'll email you when the hosted beta opens.";
+        msg.className = "msg ok";
+        msg.textContent = removing ? "Done. If that email was on the list, it's gone." : "You're on the list. We'll email you when the hosted beta opens.";
         form.email.value = "";
+        if (removing) setMode(false);
       })
       .catch(function (e) { msg.className = "msg err"; msg.textContent = e.message === "Failed to fetch" ? "Couldn't reach the server. Try again in a moment." : e.message; })
       .then(function () { btn.disabled = false; });

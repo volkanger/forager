@@ -180,6 +180,10 @@ async function waitlistSignup(request: Request, env: Env): Promise<Response> {
   const source = String(data.source ?? "").trim() || originHost;
 
   const tracker = env.TRACKER.get(env.TRACKER.idFromName("global"));
+  if (data.action === "remove") {
+    const removed = await tracker.leaveWaitlist({ email, client });
+    return "error" in removed ? reply(removed.status, { error: removed.error }) : reply(200, { ok: true });
+  }
   const result = await tracker.joinWaitlist({ email, source, client });
   return "error" in result ? reply(result.status, { error: result.error }) : reply(200, { ok: true });
 }
