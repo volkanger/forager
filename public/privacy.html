@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>Privacy Policy · Forager</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 16c0-7 5.4-11 12-11s12 4 12 11H4z' fill='%23b4532a'/%3E%3Crect x='13' y='16' width='6' height='12' rx='3' fill='%231f3b2c'/%3E%3C/svg%3E">
+<style>
+  :root { --paper:#f3ede0; --card:#faf6ec; --ink:#1f3b2c; --ink-soft:#4a5d4f; --muted:#7a7563; --rule:#cfc4ab; --rust:#b4532a;
+    --display: "Iowan Old Style", Georgia, serif; --body: "Iowan Old Style", Georgia, serif; --mono: ui-monospace, "SF Mono", Menlo, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --paper:#141c17; --card:#1d2a21; --ink:#e8e1cf; --ink-soft:#c2bda9; --muted:#8f8a78; --rule:#33443a; --rust:#e0845a; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 18px/1.6 var(--body); }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px 80px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 22px 0; border-bottom: 1px solid var(--rule); margin-bottom: 40px; font: 500 13px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+  header a { color: var(--ink-soft); text-decoration: none; } header a:hover { color: var(--rust); }
+  header .mark { font: 400 22px/1 var(--display); text-transform: none; letter-spacing: 0; color: var(--ink); margin-right: auto; }
+  h1 { font: 400 clamp(34px, 5vw, 48px)/1.05 var(--display); margin: 0 0 8px; }
+  .updated { font: 13px/1.5 var(--mono); color: var(--muted); margin: 0 0 32px; }
+  h2 { font: 400 25px/1.2 var(--display); margin: 40px 0 10px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  p, li { color: var(--ink-soft); } li { margin: 6px 0; }
+  b, strong { color: var(--ink); }
+  a { color: inherit; text-decoration-color: var(--rust); text-underline-offset: 3px; } a:hover { color: var(--rust); }
+  code { font: 15px var(--mono); background: var(--card); padding: 1px 5px; border-radius: 2px; }
+  .summary { background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: 18px 22px; }
+  .summary ul { margin: 0; padding-left: 20px; }
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--rule); font: 13px/1.5 var(--mono); color: var(--muted); display: flex; gap: 20px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><a class="mark" href="/">Forager</a><a href="/terms">Terms</a><a href="/dashboard">Dashboard</a></header>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Effective September 15, 2026</p>
+
+  <div class="summary">
+    <ul>
+      <li><b>Your prompts pass through, they aren't kept by Forager.</b> Each request goes to the AI provider that answers it, and that provider's privacy policy applies.</li>
+      <li><b>Forager keeps usage metadata</b> (which provider and model, token counts, timing, success) to track free quotas.</li>
+      <li><b>If Cloudflare AI Gateway logging is on, it stores requests and responses</b> in the operator's Cloudflare account.</li>
+      <li><b>No cookies, no ads, no selling data.</b></li>
+    </ul>
+  </div>
+
+  <h2>Who this policy covers</h2>
+  <p>Forager is open-source software (<a href="https://github.com/volkanger/forager">github.com/volkanger/forager</a>). This policy describes how the software handles data, and applies to the instance at <b>fora.ger.soy</b>, operated by the Forager project maintainer. If you use a copy that someone else deployed on their own Cloudflare account, that person is the operator and controls the settings described below.</p>
+
+  <h2>Requests to the API (<code>/v1</code>)</h2>
+  <p>When an app sends a chat request, Forager forwards the prompt and returns the response from one of the configured AI providers (for example Groq, Google Gemini, NVIDIA, Mistral, OpenRouter, Zhipu, Kilo, LLM7, Ollama, Cohere or Cloudflare Workers AI). The response header <code>x-routed-via</code> names the provider and model used.</p>
+  <ul>
+    <li><b>Forager itself doesn't store prompt or response content.</b></li>
+    <li><b>It records metadata</b> needed to stay inside free quotas: provider, model, request counts, token counts, estimated cost, latency and success or failure. Daily statistics are kept for 90 days; quota counters are overwritten every cycle.</li>
+    <li><b>AI providers receive your prompts</b> and process them under their own terms and privacy policies. Some free tiers (including Google Gemini, Mistral and Kilo) may use prompts to improve their models. Don't send sensitive information through free tiers.</li>
+    <li><b>Cloudflare AI Gateway:</b> requests to some providers are routed through Cloudflare AI Gateway in the operator's account. When the gateway's log collection is enabled, it stores request and response content there. On fora.ger.soy, gateway logging is currently <b>enabled</b> and limited to the most recent 100,000 requests.</li>
+  </ul>
+
+  <h2>API keys</h2>
+  <ul>
+    <li><b>Provider API keys</b> added in the dashboard are encrypted (AES-256-GCM) before storage and are never shown again, apart from their last four characters.</li>
+    <li><b>Forager API keys</b> are stored only as SHA-256 hashes.</li>
+    <li>The dashboard remembers your Forager API key in your browser's local storage so you stay signed in. It isn't sent anywhere except to this site.</li>
+  </ul>
+
+  <h2>The website (fora.ger.soy)</h2>
+  <ul>
+    <li><b>Waitlist:</b> if you join, we store your email address, the date you joined and the site you signed up from, only to email you when hosted Forager opens. It's never shared or sold. Use <b>Remove my email</b> under the form to delete it at any time.</li>
+    <li><b>Click counts:</b> clicks on the Deploy, GitHub, star and poll links are counted per day as totals, with nothing that identifies you.</li>
+    <li><b>IP addresses</b> aren't stored. To limit abuse, a short, salted hash of your IP is kept in memory for up to an hour.</li>
+    <li><b>No cookies</b> are set.</li>
+    <li><b>Third parties:</b> the landing page loads fonts from Google Fonts, so Google receives your IP address and browser details when you visit (<a href="https://policies.google.com/privacy">Google's privacy policy</a>). The GitHub star count and repository statistics are fetched by our server from GitHub; your browser doesn't contact GitHub unless you follow a link.</li>
+  </ul>
+
+  <h2>Infrastructure</h2>
+  <p>Forager runs on Cloudflare Workers and Durable Objects. Cloudflare processes all requests as the hosting provider (<a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a>). Data stored by Forager lives in the operator's Cloudflare account.</p>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li>Choose a specific provider with the <code>model</code> field (for example <code>groq/openai/gpt-oss-120b</code>) instead of <code>auto</code> if you only want certain providers to receive your prompts.</li>
+    <li>Remove yourself from the waitlist with the form on the home page.</li>
+    <li>Self-host Forager to keep everything in your own Cloudflare account, and turn AI Gateway logging off there if you don't want request content stored.</li>
+  </ul>
+
+  <h2>Changes and contact</h2>
+  <p>We'll update the date above when this policy changes. Questions: open a discussion at <a href="https://github.com/volkanger/forager/discussions">github.com/volkanger/forager/discussions</a>.</p>
+
+  <footer><span>Forager · open source (MIT)</span><a href="/">Home</a><a href="/terms">Terms of Service</a></footer>
+</div>
+</body>
+</html>

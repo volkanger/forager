@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>Terms of Service · Forager</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 16c0-7 5.4-11 12-11s12 4 12 11H4z' fill='%23b4532a'/%3E%3Crect x='13' y='16' width='6' height='12' rx='3' fill='%231f3b2c'/%3E%3C/svg%3E">
+<style>
+  :root { --paper:#f3ede0; --card:#faf6ec; --ink:#1f3b2c; --ink-soft:#4a5d4f; --muted:#7a7563; --rule:#cfc4ab; --rust:#b4532a;
+    --display: "Iowan Old Style", Georgia, serif; --body: "Iowan Old Style", Georgia, serif; --mono: ui-monospace, "SF Mono", Menlo, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --paper:#141c17; --card:#1d2a21; --ink:#e8e1cf; --ink-soft:#c2bda9; --muted:#8f8a78; --rule:#33443a; --rust:#e0845a; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 18px/1.6 var(--body); }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px 80px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 22px 0; border-bottom: 1px solid var(--rule); margin-bottom: 40px; font: 500 13px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+  header a { color: var(--ink-soft); text-decoration: none; } header a:hover { color: var(--rust); }
+  header .mark { font: 400 22px/1 var(--display); text-transform: none; letter-spacing: 0; color: var(--ink); margin-right: auto; }
+  h1 { font: 400 clamp(34px, 5vw, 48px)/1.05 var(--display); margin: 0 0 8px; }
+  .updated { font: 13px/1.5 var(--mono); color: var(--muted); margin: 0 0 32px; }
+  h2 { font: 400 25px/1.2 var(--display); margin: 40px 0 10px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  p, li { color: var(--ink-soft); } li { margin: 6px 0; }
+  b, strong { color: var(--ink); }
+  a { color: inherit; text-decoration-color: var(--rust); text-underline-offset: 3px; } a:hover { color: var(--rust); }
+  code { font: 15px var(--mono); background: var(--card); padding: 1px 5px; border-radius: 2px; }
+  .summary { background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: 18px 22px; }
+  .summary ul { margin: 0; padding-left: 20px; }
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--rule); font: 13px/1.5 var(--mono); color: var(--muted); display: flex; gap: 20px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><a class="mark" href="/">Forager</a><a href="/privacy">Privacy</a><a href="/dashboard">Dashboard</a></header>
+  <h1>Terms of Service</h1>
+  <p class="updated">Effective September 15, 2026</p>
+
+  <div class="summary">
+    <ul>
+      <li><b>Forager is free, open-source software provided as is</b>, with no uptime or accuracy guarantees.</li>
+      <li><b>You're responsible for your provider accounts</b>: their terms, their billing settings and what you send them.</li>
+      <li><b>Access to fora.ger.soy's API requires an API key</b> issued by its operator; it isn't an open public service yet.</li>
+    </ul>
+  </div>
+
+  <h2>1. The software</h2>
+  <p>Forager's source code is licensed under the <a href="https://github.com/volkanger/forager/blob/main/LICENSE">MIT License</a>. You may use, copy, modify and deploy it under that license. These terms cover using the Forager instance at <b>fora.ger.soy</b> and its website; a copy deployed by someone else is governed by that operator.</p>
+
+  <h2>2. Access</h2>
+  <p>The API at <code>fora.ger.soy/v1</code> is available only to holders of an API key issued by its operator. Keep your key secret. Keys can be revoked at any time, including for misuse. A hosted service open to the public isn't available yet; joining the waitlist doesn't create an account or guarantee access.</p>
+
+  <h2>3. AI providers</h2>
+  <ul>
+    <li>Forager forwards requests to third-party AI providers. Each provider's own terms, acceptable-use rules and privacy policy apply to what you send.</li>
+    <li>Use only provider accounts and API keys you're entitled to use. Creating multiple free accounts to multiply quotas usually violates providers' terms.</li>
+    <li>Free tiers, models and limits change without notice. Forager tries to stay inside free quotas and to stop using keys that report billing problems, but it can't see usage from outside Forager and can't guarantee you'll never be charged. Keep billing disabled on free-tier accounts, and check your providers' consoles.</li>
+  </ul>
+
+  <h2>4. Acceptable use</h2>
+  <p>Don't use Forager to break the law, to harm others, to generate spam or malware, to attack or overload providers or Cloudflare, or to get around a provider's limits or safety systems. AI output can be wrong; don't rely on it for decisions where mistakes could cause harm.</p>
+
+  <h2>5. No warranty</h2>
+  <p>Forager and fora.ger.soy are provided "as is" and "as available", without warranties of any kind, express or implied, including fitness for a particular purpose and uninterrupted or error-free operation.</p>
+
+  <h2>6. Limitation of liability</h2>
+  <p>To the fullest extent allowed by law, the Forager maintainers aren't liable for any indirect, incidental or consequential damages, lost data, or charges from third-party providers arising from your use of Forager.</p>
+
+  <h2>7. Changes and contact</h2>
+  <p>These terms may change; the date above shows the latest version. Continued use after a change means you accept it. Questions: <a href="https://github.com/volkanger/forager/discussions">github.com/volkanger/forager/discussions</a>.</p>
+
+  <footer><span>Forager · open source (MIT)</span><a href="/">Home</a><a href="/privacy">Privacy Policy</a></footer>
+</div>
+</body>
+</html>
