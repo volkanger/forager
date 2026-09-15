@@ -41,7 +41,7 @@ landing ─── /api/* ──────►           ▼                 ▼
 | `public/index.html` | Landing page (fora.ger.soy): Deploy button, catalog, waitlist, star count, click beacons, self-host redirect to setup |
 | `public/chat.html` | Chat UI at `/chat`: signs in with a Forager API key, streams from `/v1/chat/completions`, model picker from `/v1/models`, conversations saved only in the browser (localStorage), small escaped-first markdown renderer (code, lists, tables, links limited to http/https) |
 | `public/privacy.html`, `public/terms.html` | Privacy policy and terms (contact fora@ger.soy) |
-| `public/dashboard.html` | Dashboard: first-run setup, API keys, provider keys, quota bars, cooldowns, stats, playground, waitlist, interest |
+| `public/dashboard.html` | Dashboard: sidebar navigation (Chat link first), first-run setup, API keys, provider keys, quota bars, cooldowns, stats, playground, waitlist, interest; same visual system as the landing page and chat |
 | `scripts/import-freellmapi-keys.mjs` | Copies keys from a local FreeLLMAPI install into Wrangler secrets (decrypts in memory, pipes to `wrangler secret bulk`) |
 | `scripts/publish-public.sh` | Publishes the private repo's HEAD to the public repo as one new commit |
 | `wrangler.jsonc` | Worker config: assets, Durable Object + migration, AI binding, cron, `AI_GATEWAY_ID` |
