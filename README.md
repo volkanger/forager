@@ -45,6 +45,31 @@ npx wrangler deploy
 
 To serve it on your own domain (the zone must be on your Cloudflare account): `npx wrangler deploy --domain llm.example.com`.
 
+## Updating your copy
+
+The Deploy button makes a **copy** of this repo in your account, not a fork, so new Forager releases don't reach it on their own. Your data is safe across updates: API keys, provider keys, quota counters and stats live in the Durable Object, not in the code.
+
+**If you used the Deploy button** (Cloudflare redeploys whenever you push to your copy's main branch):
+
+```bash
+git clone https://github.com/<you>/<your-copy> && cd <your-copy>
+git remote add upstream https://github.com/volkanger/forager
+git fetch upstream
+git checkout upstream/main -- .     # take the latest Forager files
+git status                          # review what changed
+git commit -m "Update Forager" && git push
+```
+
+The checkout replaces files you edited with the upstream version. To keep custom limits or providers through updates, change them at runtime with `PUT /admin/catalog` instead of editing `src/catalog.ts`; runtime changes live in the Durable Object. If you did edit files, check `git diff --staged` before committing and re-apply what you need.
+
+**If you deployed from the command line:**
+
+```bash
+cd forager && git pull && npm install && npx wrangler deploy
+```
+
+To hear about new releases, click **Watch → Custom → Releases** on the [GitHub repo](https://github.com/volkanger/forager).
+
 ## What keeps it at $0
 
 | Guard | How |
