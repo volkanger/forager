@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chat · Forager</title>
+<meta name="description" content="Chat with your Forager free-tier allowance.">
+<meta name="theme-color" content="#f3ede0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 16c0-7 5.4-11 12-11s12 4 12 11H4z' fill='%23b4532a'/%3E%3Crect x='13' y='16' width='6' height='12' rx='3' fill='%231f3b2c'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f3ede0; --paper-2: #ebe3d2; --card: #faf6ec; --ink: #1f3b2c; --ink-soft: #4a5d4f; --muted: #7a7563;
+    --rule: #cfc4ab; --rust: #b4532a; --rust-soft: #e7c9b5; --moss: #6f8a4c; --code-bg: #1f3b2c; --code-ink: #f3ede0;
+    --display: "Young Serif", "Iowan Old Style", Georgia, serif;
+    --body: "Newsreader", "Iowan Old Style", Georgia, serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #141c17; --paper-2: #1a241d; --card: #1d2a21; --ink: #e8e1cf; --ink-soft: #c2bda9; --muted: #8f8a78;
+      --rule: #33443a; --rust: #e0845a; --rust-soft: #3d2a20; --moss: #9bb57a; --code-bg: #0c120e; --code-ink: #e8e1cf; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 18px/1.6 var(--body); -webkit-font-smoothing: antialiased; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  a { color: inherit; text-decoration-color: var(--rust); text-underline-offset: 3px; }
+  code, pre, .mono { font-family: var(--mono); }
+
+  .app { display: grid; grid-template-columns: 270px 1fr; grid-template-rows: auto 1fr; height: 100dvh; }
+  @media (max-width: 820px) { .app { grid-template-columns: 1fr; } .side { display: none; } .side.open { display: flex; position: fixed; inset: 58px 0 0 0; z-index: 5; } }
+
+  /* top bar */
+  .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--rule); background: var(--paper); }
+  .mark { display: flex; align-items: center; gap: 8px; font: 400 22px/1 var(--display); text-decoration: none; }
+  .mark svg { width: 24px; height: 24px; }
+  .mark small { font: 500 11px/1 var(--mono); color: var(--rust); letter-spacing: .12em; text-transform: uppercase; margin-left: 4px; }
+  .grow { flex: 1; }
+  .pill { font: 12px/1 var(--mono); color: var(--muted); border: 1px solid var(--rule); border-radius: 99px; padding: 6px 10px; white-space: nowrap; text-decoration: none; }
+  .pill:hover { color: var(--rust); border-color: var(--rust); }
+  select.model { font: 13px/1 var(--mono); background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: 7px 8px; max-width: 260px; }
+  .iconbtn { background: none; border: 1px solid var(--rule); border-radius: 3px; padding: 6px 10px; cursor: pointer; font: 13px/1 var(--mono); }
+  .iconbtn:hover { border-color: var(--rust); color: var(--rust); }
+  .menu-toggle { display: none; }
+  @media (max-width: 820px) { .menu-toggle { display: inline-block; } .top .pill.usage { display: none; } select.model { max-width: 150px; } }
+
+  /* sidebar */
+  .side { display: flex; flex-direction: column; border-right: 1px solid var(--rule); background: var(--paper-2); min-height: 0; }
+  .side .new { margin: 14px; padding: 10px 12px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); border-radius: 2px; cursor: pointer; font: 500 13px/1 var(--mono); text-align: left; }
+  .side .new:hover { background: var(--rust); border-color: var(--rust); }
+  .chats { overflow-y: auto; flex: 1; padding: 0 8px 12px; }
+  .chat-item { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 3px; cursor: pointer; font-size: 16px; color: var(--ink-soft); }
+  .chat-item:hover, .chat-item.active { background: var(--card); color: var(--ink); }
+  .chat-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-item button { visibility: hidden; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 4px; }
+  .chat-item:hover button, .chat-item.active button { visibility: visible; }
+  .chat-item button:hover { color: var(--rust); }
+  .side-foot { padding: 12px 14px; border-top: 1px solid var(--rule); font: 12px/1.6 var(--mono); color: var(--muted); }
+  .side-foot a { color: var(--ink-soft); }
+
+  /* conversation */
+  .main { display: flex; flex-direction: column; min-height: 0; }
+  .scroll { flex: 1; overflow-y: auto; }
+  .thread { max-width: 780px; margin: 0 auto; padding: 28px 22px 12px; }
+  .msg { margin: 0 0 26px; }
+  .msg .who { font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: flex; gap: 10px; align-items: center; }
+  .msg.user .body { background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: 12px 16px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.assistant .body { padding: 0 2px; word-wrap: break-word; }
+  .msg .body p { margin: 0 0 12px; } .msg .body p:last-child { margin-bottom: 0; }
+  .msg .body h1, .msg .body h2, .msg .body h3 { font-family: var(--display); font-weight: 400; line-height: 1.2; margin: 18px 0 8px; }
+  .msg .body h1 { font-size: 26px; } .msg .body h2 { font-size: 22px; } .msg .body h3 { font-size: 19px; }
+  .msg .body ul, .msg .body ol { margin: 0 0 12px; padding-left: 24px; }
+  .msg .body code { font-size: 14px; background: var(--paper-2); padding: 1px 5px; border-radius: 2px; }
+  .msg .body pre { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 3px; padding: 14px 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.6; margin: 0 0 12px; }
+  .msg .body pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+  .msg .body pre .copy { position: absolute; top: 6px; right: 6px; font: 11px/1 var(--mono); background: transparent; color: var(--code-ink); border: 1px solid rgba(243,237,224,.3); border-radius: 2px; padding: 4px 7px; cursor: pointer; opacity: .7; }
+  .msg .body pre .copy:hover { opacity: 1; }
+  .msg .body .table { overflow-x: auto; margin: 0 0 12px; }
+  .msg .body table { border-collapse: collapse; font-size: 15px; min-width: 60%; }
+  .msg .body th, .msg .body td { border: 1px solid var(--rule); padding: 6px 10px; text-align: left; vertical-align: top; }
+  .msg .body th { background: var(--paper-2); font-weight: 500; }
+  .msg .body blockquote { margin: 0 0 12px; padding-left: 14px; border-left: 2px solid var(--rust); color: var(--ink-soft); }
+  .msg .meta { margin-top: 8px; font: 12px/1.5 var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+  .msg .meta b { font-weight: 500; color: var(--rust); }
+  .msg .meta button { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 3px; }
+  .msg .meta button:hover { color: var(--rust); }
+  .msg details.thinking { margin: 0 0 10px; font-size: 15px; color: var(--muted); }
+  .msg details.thinking summary { cursor: pointer; font: 12px/1.6 var(--mono); }
+  .msg details.thinking div { white-space: pre-wrap; border-left: 2px solid var(--rule); padding: 6px 0 6px 12px; margin-top: 6px; }
+  .msg.error .body { color: var(--rust); font: 14px/1.6 var(--mono); border: 1px dashed var(--rust); padding: 10px 14px; border-radius: 3px; }
+  .cursor::after { content: "▍"; color: var(--rust); animation: blink 1s steps(2) infinite; margin-left: 1px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .empty { max-width: 620px; margin: 10vh auto 0; padding: 0 22px; text-align: center; }
+  .empty h1 { font: 400 clamp(34px, 5vw, 50px)/1.05 var(--display); margin: 0 0 12px; }
+  .empty h1 em { font-family: var(--body); color: var(--rust); }
+  .empty p { color: var(--ink-soft); margin: 0 0 22px; }
+  .starters { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; text-align: left; }
+  .starters button { background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: 12px 14px; cursor: pointer; font-size: 16px; color: var(--ink-soft); line-height: 1.4; }
+  .starters button:hover { border-color: var(--rust); color: var(--ink); }
+  .starters small { display: block; font: 11px/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 6px; }
+
+  /* composer */
+  .composer { padding: 10px 22px calc(16px + env(safe-area-inset-bottom)); }
+  .box { max-width: 780px; margin: 0 auto; background: var(--card); border: 1px solid var(--ink); border-radius: 3px; display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; }
+  .box:focus-within { outline: 2px solid var(--rust); outline-offset: 2px; }
+  .box textarea { flex: 1; border: 0; background: transparent; resize: none; max-height: 220px; min-height: 28px; padding: 6px 0; font-size: 18px; line-height: 1.5; outline: none; }
+  .send { border: 0; background: var(--ink); color: var(--paper); border-radius: 2px; padding: 10px 14px; cursor: pointer; font: 500 13px/1 var(--mono); }
+  .send:hover { background: var(--rust); }
+  .send:disabled { opacity: .45; cursor: default; background: var(--ink); }
+  .hint { max-width: 780px; margin: 6px auto 0; font: 11.5px/1.5 var(--mono); color: var(--muted); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+  /* sign in */
+  .overlay { position: fixed; inset: 0; background: rgba(20, 28, 23, 0.55); display: grid; place-items: center; z-index: 10; padding: 20px; }
+  .overlay[hidden] { display: none; }
+  .signin { background: var(--paper); border: 1px solid var(--ink); border-radius: 3px; max-width: 460px; width: 100%; padding: 28px; box-shadow: 0 30px 60px -30px rgba(0,0,0,.5); }
+  .signin h2 { font: 400 30px/1.1 var(--display); margin: 0 0 8px; }
+  .signin p { color: var(--ink-soft); margin: 0 0 16px; font-size: 16px; }
+  .signin input { width: 100%; background: var(--card); border: 1px solid var(--rule); border-radius: 2px; padding: 11px 12px; font: 14px var(--mono); margin-bottom: 10px; }
+  .signin .row { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .signin .err { color: var(--rust); font: 13px/1.5 var(--mono); min-height: 1.5em; margin: 0 0 10px; }
+  .signin small { font: 12px/1.5 var(--mono); color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <button class="iconbtn menu-toggle" id="menu" aria-label="Show conversations">☰</button>
+    <a class="mark" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 16c0-7 5.4-11 12-11s12 4 12 11H4z" fill="var(--rust)"/><circle cx="11" cy="11" r="1.6" fill="var(--paper)"/><circle cx="19" cy="9" r="1.2" fill="var(--paper)"/><rect x="13" y="16" width="6" height="12" rx="3" fill="var(--ink)"/></svg>Forager<small>Chat</small></a>
+    <span class="grow"></span>
+    <a class="pill usage" id="usage" href="/dashboard" title="Today's usage through this Forager (UTC)">Today: –</a>
+    <select class="model" id="model" aria-label="Model"><option value="auto">auto: best available</option></select>
+  </header>
+
+  <aside class="side" id="side">
+    <button class="new" id="new">+ New chat</button>
+    <div class="chats" id="chats"></div>
+    <div class="side-foot">
+      Chats are saved in this browser only.<br>
+      <a href="/dashboard">Dashboard</a> · <a href="#" id="signout">Sign out</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="scroll" id="scroll">
+      <div class="thread" id="thread"></div>
+    </div>
+    <div class="composer">
+      <form class="box" id="form">
+        <textarea id="input" rows="1" placeholder="Ask anything…" aria-label="Message"></textarea>
+        <button class="send" id="send" type="submit" disabled>Send</button>
+      </form>
+      <div class="hint"><span>Enter to send · Shift+Enter for a new line</span><span id="route-hint">Answers come from free provider tiers. Some may use prompts for training.</span></div>
+    </div>
+  </main>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <form class="signin" id="signin">
+    <h2>Sign in to chat</h2>
+    <p>Use your Forager API key, the one you use for <code>/v1</code> or the dashboard.</p>
+    <input id="key" type="password" autocomplete="off" placeholder="fgr-… or fgr_…" aria-label="Forager API key">
+    <p class="err" id="signin-err" role="alert"></p>
+    <div class="row">
+      <small>Don't have one? <a href="/dashboard">Set up in the dashboard</a></small>
+      <button class="send" type="submit">Sign in</button>
+    </div>
+  </form>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var store = {
+    get: function (k, d) { try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  };
+  var key = "";
+  try { key = localStorage.getItem("forager-key") || ""; } catch (e) {}
+  var chats = store.get("forager-chats", []);
+  var current = null;
+  var controller = null;
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+
+  // ---------- markdown (escape first, then a small safe subset) ----------
+  function inline(s) {
+    return s
+      .replace(/`([^`\n]+)`/g, function (_, c) { return "<code>" + c + "</code>"; })
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  }
+  function markdown(src) {
+    var out = [], blocks = String(src).split(/(```[\s\S]*?(?:```|$))/g);
+    blocks.forEach(function (block) {
+      if (block.indexOf("```") === 0) {
+        var body = block.replace(/^```[^\n]*\n?/, "").replace(/```$/, "");
+        out.push('<pre><button class="copy" type="button">Copy</button><code>' + esc(body) + "</code></pre>");
+        return;
+      }
+      var lines = esc(block).split("\n"), para = [], list = null, table = null;
+      var cells = function (row) { return row.trim().replace(/^\||\|$/g, "").split("|").map(function (c) { return inline(c.trim()); }); };
+      function flushTable() {
+        if (!table) return;
+        if (table.length > 1 && /^\s*\|?\s*:?-{2,}/.test(table[1])) {
+          var head = cells(table[0]), rows = table.slice(2).map(cells);
+          out.push('<div class="table"><table><thead><tr>' + head.map(function (h) { return "<th>" + h + "</th>"; }).join("") + "</tr></thead><tbody>" +
+            rows.map(function (r) { return "<tr>" + r.map(function (c) { return "<td>" + c + "</td>"; }).join("") + "</tr>"; }).join("") + "</tbody></table></div>");
+        } else {
+          out.push("<p>" + table.map(inline).join("<br>") + "</p>");
+        }
+        table = null;
+      }
+      function flushPara() { if (para.length) { out.push("<p>" + inline(para.join("<br>")) + "</p>"); para = []; } }
+      function flushList() { if (list) { out.push("<" + list.tag + ">" + list.items.map(function (i) { return "<li>" + inline(i) + "</li>"; }).join("") + "</" + list.tag + ">"); list = null; } }
+      lines.forEach(function (line) {
+        var m;
+        if (/^\s*\|.*\|\s*$/.test(line)) { flushPara(); flushList(); (table = table || []).push(line); return; }
+        flushTable();
+        if (!line.trim()) { flushPara(); flushList(); return; }
+        if ((m = line.match(/^(#{1,3})\s+(.*)$/))) { flushPara(); flushList(); out.push("<h" + m[1].length + ">" + inline(m[2]) + "</h" + m[1].length + ">"); return; }
+        if ((m = line.match(/^\s*[-*]\s+(.*)$/))) { flushPara(); if (!list || list.tag !== "ul") { flushList(); list = { tag: "ul", items: [] }; } list.items.push(m[1]); return; }
+        if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) { flushPara(); if (!list || list.tag !== "ol") { flushList(); list = { tag: "ol", items: [] }; } list.items.push(m[1]); return; }
+        if ((m = line.match(/^&gt;\s?(.*)$/))) { flushPara(); flushList(); out.push("<blockquote>" + inline(m[1]) + "</blockquote>"); return; }
+        flushList(); para.push(line);
+      });
+      flushTable(); flushPara(); flushList();
+    });
+    return out.join("");
+  }
+
+  // ---------- storage ----------
+  function save() { chats = chats.slice(0, 60); store.set("forager-chats", chats); }
+  function newChat() {
+    current = { id: String(Date.now()), title: "New chat", model: $("model").value, messages: [], updated: Date.now() };
+    renderThread(); renderList(); $("input").focus();
+  }
+  function persistCurrent() {
+    if (!current || !current.messages.length) return;
+    current.updated = Date.now();
+    chats = [current].concat(chats.filter(function (c) { return c.id !== current.id; }));
+    save(); renderList();
+  }
+
+  // ---------- rendering ----------
+  function renderList() {
+    $("chats").innerHTML = chats.map(function (c) {
+      return '<div class="chat-item' + (current && c.id === current.id ? " active" : "") + '" data-id="' + esc(c.id) + '"><span>' + esc(c.title) +
+        '</span><button type="button" data-del="' + esc(c.id) + '" aria-label="Delete chat">✕</button></div>';
+    }).join("");
+  }
+  function metaHtml(meta) {
+    if (!meta) return "";
+    var parts = [];
+    if (meta.via) parts.push("via <b>" + esc(meta.via) + "</b>");
+    if (meta.tokens) parts.push(esc(meta.tokens) + " tokens");
+    if (meta.seconds) parts.push(esc(meta.seconds) + "s");
+    if (meta.attempts > 1) parts.push(esc(meta.attempts) + " attempts");
+    return parts.join(" · ");
+  }
+  function messageNode(m, index) {
+    var el = document.createElement("div");
+    el.className = "msg " + (m.error ? "error" : m.role);
+    var who = m.role === "user" ? "You" : "Forager";
+    var body = m.role === "user" || m.error ? esc(m.content) : markdown(m.content || "");
+    var thinking = m.reasoning ? '<details class="thinking"><summary>Thinking</summary><div>' + esc(m.reasoning) + "</div></details>" : "";
+    var actions = m.role === "assistant" && !m.error ? ' <button type="button" data-copy="' + index + '">Copy</button>' : "";
+    var retry = (m.role === "assistant" || m.error) && index === current.messages.length - 1 ? ' <button type="button" data-retry>Retry</button>' : "";
+    el.innerHTML = '<div class="who">' + who + "</div>" + thinking + '<div class="body">' + body + "</div>" +
+      (m.role !== "user" ? '<div class="meta">' + metaHtml(m.meta) + actions + retry + "</div>" : "");
+    return el;
+  }
+  var starters = [
+    ["Explain", "Explain how free LLM API tiers limit requests and tokens, with examples."],
+    ["Code", "Write a Python function that retries an HTTP request with exponential backoff."],
+    ["Write", "Draft a friendly two-paragraph email announcing a new open-source project."],
+    ["Think", "Give me three ways to cut cloud costs for a small side project."]
+  ];
+  function renderThread() {
+    var t = $("thread");
+    if (!current || !current.messages.length) {
+      t.innerHTML = '<div class="empty"><h1>What are you <em>foraging</em> for?</h1><p>Every answer comes from a free provider tier with quota left. Pick <code>auto</code> or choose a model at the top.</p><div class="starters">' +
+        starters.map(function (s) { return '<button type="button" data-starter="' + esc(s[1]) + '"><small>' + esc(s[0]) + "</small>" + esc(s[1]) + "</button>"; }).join("") + "</div></div>";
+      return;
+    }
+    t.innerHTML = "";
+    current.messages.forEach(function (m, i) { t.appendChild(messageNode(m, i)); });
+    scrollDown(true);
+  }
+  function scrollDown(force) {
+    var s = $("scroll");
+    if (force || s.scrollHeight - s.scrollTop - s.clientHeight < 140) s.scrollTop = s.scrollHeight;
+  }
+
+  // ---------- API ----------
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ authorization: "Bearer " + key, "content-type": "application/json" }, opts.headers || {});
+    return fetch(path, opts);
+  }
+  function loadModels() {
+    return api("/v1/models").then(function (r) {
+      if (r.status === 401) throw new Error("unauthorized");
+      return r.json();
+    }).then(function (b) {
+      var sel = $("model"), keep = store.get("forager-chat-model", "auto");
+      var ids = b.data.map(function (m) { return m.id; });
+      var autos = ids.filter(function (i) { return i.indexOf("auto") === 0; });
+      var groups = {};
+      ids.filter(function (i) { return i.indexOf("auto") !== 0; }).forEach(function (i) { var p = i.split("/")[0]; (groups[p] = groups[p] || []).push(i); });
+      sel.innerHTML = '<optgroup label="Automatic">' + autos.map(function (i) {
+        return '<option value="' + esc(i) + '">' + esc(i === "auto" ? "auto: best available" : i) + "</option>";
+      }).join("") + "</optgroup>" + Object.keys(groups).sort().map(function (p) {
+        return '<optgroup label="' + esc(p) + '">' + groups[p].map(function (i) { return '<option value="' + esc(i) + '">' + esc(i.slice(p.length + 1)) + "</option>"; }).join("") + "</optgroup>";
+      }).join("");
+      sel.value = ids.indexOf(keep) >= 0 ? keep : "auto";
+    });
+  }
+  function loadUsage() {
+    api("/admin/usage").then(function (r) { return r.ok ? r.json() : null; }).then(function (u) {
+      if (!u) { $("usage").hidden = true; return; }
+      var req = 0, tok = 0;
+      u.today.forEach(function (row) { req += row.requests; tok += row.tok_in + row.tok_out; });
+      var fmt = function (n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n); };
+      $("usage").textContent = "Today: " + fmt(req) + " requests · " + fmt(tok) + " tokens";
+    }).catch(function () {});
+  }
+
+  function send(text) {
+    if (controller) return;
+    if (!current) newChat();
+    if (text != null) {
+      current.messages.push({ role: "user", content: text });
+      if (current.title === "New chat") current.title = text.replace(/\s+/g, " ").slice(0, 60);
+    }
+    current.model = $("model").value;
+    var history = current.messages.filter(function (m) { return !m.error && m.content; }).slice(-40)
+      .map(function (m) { return { role: m.role, content: m.content }; });
+    var reply = { role: "assistant", content: "", reasoning: "", meta: {} };
+    current.messages.push(reply);
+    renderThread();
+    var node = $("thread").lastChild, bodyEl = node.querySelector(".body");
+    bodyEl.classList.add("cursor");
+    persistCurrent();
+
+    controller = new AbortController();
+    setBusy(true);
+    var started = Date.now();
+    api("/v1/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      body: JSON.stringify({ model: current.model, stream: true, messages: history })
+    }).then(function (res) {
+      reply.meta.via = res.headers.get("x-routed-via") || "";
+      reply.meta.attempts = Number(res.headers.get("x-forager-attempts") || 1);
+      var type = res.headers.get("content-type") || "";
+      if (!res.ok || type.indexOf("text/event-stream") < 0) {
+        return res.text().then(function (t) {
+          var msg = t;
+          try { var j = JSON.parse(t); msg = (j.error && j.error.message) || (j.choices && j.choices[0].message.content) || t; if (j.choices) { reply.content = msg; return; } } catch (e) {}
+          if (res.status === 401) { showSignin("Your key was rejected. Sign in again."); }
+          var wait = res.headers.get("retry-after");
+          throw new Error(msg + (wait ? " Try again in about " + Math.ceil(Number(wait) / 60) + " min." : ""));
+        });
+      }
+      var reader = res.body.getReader(), decoder = new TextDecoder(), buffer = "", pending = false;
+      function paint() {
+        pending = false;
+        bodyEl.innerHTML = markdown(reply.content);
+        if (reply.reasoning) {
+          var d = node.querySelector("details.thinking");
+          if (!d) { d = document.createElement("details"); d.className = "thinking"; d.innerHTML = "<summary>Thinking…</summary><div></div>"; node.insertBefore(d, bodyEl); }
+          d.querySelector("div").textContent = reply.reasoning;
+        }
+        scrollDown(false);
+      }
+      function pump() {
+        return reader.read().then(function (chunk) {
+          if (chunk.done) return;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          var lines = buffer.split("\n"); buffer = lines.pop();
+          lines.forEach(function (line) {
+            if (line.indexOf("data:") !== 0) return;
+            var data = line.slice(5).trim();
+            if (!data || data === "[DONE]") return;
+            try {
+              var ev = JSON.parse(data);
+              if (ev.usage) reply.meta.tokens = (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0);
+              (ev.choices || []).forEach(function (c) {
+                var d = c.delta || {};
+                if (typeof d.content === "string") reply.content += d.content;
+                var r = d.reasoning_content || d.reasoning;
+                if (typeof r === "string") reply.reasoning += r;
+              });
+            } catch (e) {}
+          });
+          if (!pending) { pending = true; requestAnimationFrame(paint); }
+          return pump();
+        });
+      }
+      return pump();
+    }).then(function () {
+      if (!reply.content && !reply.reasoning) throw new Error("The provider returned an empty answer. Try again or pick another model.");
+    }).catch(function (e) {
+      if (e.name === "AbortError") { reply.meta.stopped = true; if (!reply.content) reply.content = "_Stopped._"; return; }
+      reply.error = true;
+      reply.content = e.message === "Failed to fetch" ? "Couldn't reach Forager. Check your connection and try again." : e.message;
+    }).then(function () {
+      reply.meta.seconds = ((Date.now() - started) / 1000).toFixed(1);
+      controller = null;
+      setBusy(false);
+      persistCurrent();
+      renderThread();
+      loadUsage();
+    });
+  }
+
+  function setBusy(busy) {
+    var b = $("send");
+    b.textContent = busy ? "Stop" : "Send";
+    b.disabled = busy ? false : !$("input").value.trim();
+    b.type = busy ? "button" : "submit";
+  }
+
+  // ---------- sign in ----------
+  function showSignin(message) {
+    $("overlay").hidden = false;
+    $("signin-err").textContent = message || "";
+    setTimeout(function () { $("key").focus(); }, 30);
+  }
+  $("signin").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var candidate = $("key").value.trim();
+    if (!candidate) return;
+    $("signin-err").textContent = "Checking…";
+    key = candidate;
+    loadModels().then(function () {
+      try { localStorage.setItem("forager-key", key); } catch (e) {}
+      $("overlay").hidden = true; $("key").value = "";
+      loadUsage(); $("input").focus();
+    }).catch(function () { key = ""; $("signin-err").textContent = "That key didn't work. Check it and try again."; });
+  });
+  $("signout").addEventListener("click", function (ev) {
+    ev.preventDefault();
+    try { localStorage.removeItem("forager-key"); } catch (e) {}
+    key = ""; showSignin();
+  });
+
+  // ---------- events ----------
+  $("form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var text = $("input").value.trim();
+    if (!text || controller) return;
+    $("input").value = ""; autosize();
+    send(text);
+  });
+  $("send").addEventListener("click", function () { if (controller) controller.abort(); });
+  function autosize() { var t = $("input"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 220) + "px"; $("send").disabled = !controller && !t.value.trim(); }
+  $("input").addEventListener("input", autosize);
+  $("input").addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); $("form").requestSubmit(); }
+  });
+  $("model").addEventListener("change", function () { store.set("forager-chat-model", this.value); });
+  $("new").addEventListener("click", function () { newChat(); $("side").classList.remove("open"); });
+  $("menu").addEventListener("click", function () { $("side").classList.toggle("open"); });
+  $("chats").addEventListener("click", function (ev) {
+    var del = ev.target.closest("[data-del]");
+    if (del) {
+      chats = chats.filter(function (c) { return c.id !== del.getAttribute("data-del"); });
+      save();
+      if (current && current.id === del.getAttribute("data-del")) newChat(); else renderList();
+      return;
+    }
+    var item = ev.target.closest(".chat-item");
+    if (!item || controller) return;
+    current = chats.filter(function (c) { return c.id === item.getAttribute("data-id"); })[0];
+    if (current && current.model) { var opt = $("model").querySelector('option[value="' + CSS.escape(current.model) + '"]'); if (opt) $("model").value = current.model; }
+    renderThread(); renderList(); $("side").classList.remove("open");
+  });
+  $("thread").addEventListener("click", function (ev) {
+    var starter = ev.target.closest("[data-starter]");
+    if (starter) { send(starter.getAttribute("data-starter")); return; }
+    var copy = ev.target.closest("[data-copy]");
+    if (copy) { navigator.clipboard && navigator.clipboard.writeText(current.messages[Number(copy.getAttribute("data-copy"))].content); copy.textContent = "Copied"; return; }
+    var codeCopy = ev.target.closest("pre .copy");
+    if (codeCopy) { navigator.clipboard && navigator.clipboard.writeText(codeCopy.nextSibling.textContent); codeCopy.textContent = "Copied"; return; }
+    if (ev.target.closest("[data-retry]") && !controller) {
+      current.messages.pop();
+      renderThread();
+      send(null);
+    }
+  });
+
+  // ---------- start ----------
+  newChat();
+  if (!key) showSignin();
+  else loadModels().then(loadUsage).catch(function () { showSignin("Sign in with your Forager API key."); });
+})();
+</script>
+</body>
+</html>

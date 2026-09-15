@@ -39,6 +39,8 @@ landing ─── /api/* ──────►           ▼                 ▼
 | `src/account.ts` | Discovers the Cloudflare account ID through the Workers AI binding (so config has nothing account-specific) |
 | `src/env.ts` | The `Env` type: bindings, vars, optional secrets |
 | `public/index.html` | Landing page (fora.ger.soy): Deploy button, catalog, waitlist, star count, click beacons, self-host redirect to setup |
+| `public/chat.html` | Chat UI at `/chat`: signs in with a Forager API key, streams from `/v1/chat/completions`, model picker from `/v1/models`, conversations saved only in the browser (localStorage), small escaped-first markdown renderer (code, lists, tables, links limited to http/https) |
+| `public/privacy.html`, `public/terms.html` | Privacy policy and terms (contact fora@ger.soy) |
 | `public/dashboard.html` | Dashboard: first-run setup, API keys, provider keys, quota bars, cooldowns, stats, playground, waitlist, interest |
 | `scripts/import-freellmapi-keys.mjs` | Copies keys from a local FreeLLMAPI install into Wrangler secrets (decrypts in memory, pipes to `wrangler secret bulk`) |
 | `scripts/publish-public.sh` | Publishes the private repo's HEAD to the public repo as one new commit |

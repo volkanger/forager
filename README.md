@@ -104,6 +104,10 @@ To hear about new releases, click **Watch → Custom → Releases** on the [GitH
 
 `CF_API_TOKEN` (Workers AI) needs "Workers AI: Read" and "Edit". Providers marked **card on file** (Vercel) unlock their free tier only after you add a payment method; Forager keeps 20% headroom on them, and you're only charged if you buy credits there.
 
+## Chat in the browser
+
+Open `/chat` on your Forager (for example `https://fora.ger.soy/chat`) and sign in with your API key. Answers stream from whichever free tier has quota left; each reply shows the provider and model that answered. Conversations are saved only in your browser. The page is a static file, so it costs nothing beyond the API calls it makes.
+
 ## Use it
 
 ```bash
