@@ -32,6 +32,8 @@ export interface ModelDef {
   price?: { in: number; out: number };
   /** Per-key limits specific to this model. */
   limits?: Limit[];
+  /** Skipped by plain `auto`; still reachable by explicit id, `auto:<tag>` and profiles. */
+  noAuto?: boolean;
   disabled?: boolean;
 }
 
@@ -160,9 +162,9 @@ export const DEFAULT_CATALOG: Catalog = {
         { id: "openai/gpt-oss-20b", tags: ["fast", "tools", "reasoning"], priority: 70, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
         // Tested 2026-09-15: any prompt that triggers web search returns 413 "Request Entity Too Large" when not
         // streaming. Streaming sends the whole reply (answer after </think>) as delta.reasoning, then ends with a
-        // 413 error event instead of finish_reason. Prompts without search work. Kept out of auto:smart/fast.
-        { id: "groq/compound", tags: ["search"], priority: 60, limits: groqLimits(250, 70_000) },
-        { id: "groq/compound-mini", tags: ["search"], priority: 55, limits: groqLimits(250, 70_000) },
+        // 413 error event instead of finish_reason. Prompts without search work. Kept out of auto, auto:smart/fast.
+        { id: "groq/compound", tags: ["search"], priority: 60, noAuto: true, limits: groqLimits(250, 70_000) },
+        { id: "groq/compound-mini", tags: ["search"], priority: 55, noAuto: true, limits: groqLimits(250, 70_000) },
       ],
     },
     {

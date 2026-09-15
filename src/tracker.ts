@@ -943,7 +943,7 @@ export class Tracker extends DurableObject<Env> {
       } else {
         candidates = usable
           .flatMap((p) => p.models.filter((m) => this.allowed(p, m)).map((m) => ({ p, m })))
-          .filter(({ m }) => !name || m.tags?.includes(name))
+          .filter(({ m }) => (name ? m.tags?.includes(name) : !m.noAuto))
           .sort(byPriority);
       }
       const est = input.estIn + input.estOut;

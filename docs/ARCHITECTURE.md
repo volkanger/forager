@@ -54,7 +54,7 @@ landing ─── /api/* ──────►           ▼                 ▼
 2. **Estimate**: input tokens ≈ JSON length of `messages` (+ `tools`) ÷ 4; output tokens = `max_tokens` (default 1024, capped at 4096). Detect `needs.tools` and `needs.vision` (any `image_url` part).
 3. **Acquire** (`Tracker.acquire()`), repeated up to `MAX_ATTEMPTS` (default 6):
    - **Resolve candidates** from the `model` field:
-     - `auto`: every allowed model, highest `priority` first.
+     - `auto`: every allowed model except those with `noAuto`, highest `priority` first.
      - `auto:<tag>`: only models with that tag. `auto:<profile>`: an ordered list from `catalog.profiles`.
      - `provider/model`: exactly that model. A bare model id matches every provider that serves it.
      - For `auto*`, models missing a needed capability or with too small a context window are dropped.
@@ -154,7 +154,7 @@ SQLite tables (all `WITHOUT ROWID` so an upsert writes one row):
 | `resetTz`, `limits` | Reset time zone, provider-level limits |
 | `modelIdPattern`, `allowUnlisted` | $0 guard regex; whether explicit unlisted model ids are allowed |
 | `keyless`, `requiresCard`, `streamUsage`, `disabled` | Behaviour flags |
-| `models[]` | `{id, tags, priority, context, price, limits, disabled}` |
+| `models[]` | `{id, tags, priority, context, price, limits, noAuto, disabled}` |
 
 - **Runtime override without redeploying:** `GET /admin/catalog` → edit → `PUT /admin/catalog` (validated by `validateCatalog()`), or `DELETE` to go back to the default.
 - **OpenRouter:** its `:free` models are merged in from a daily sync (`syncOpenRouter()`); catalog entries win.
