@@ -1,2 +1,2 @@
-PROXY_API_KEY=
-KEYSTORE_SECRET=
+PROXY_API_KEY= # Your router password. Apps send it as a Bearer token and you use it to sign in to /dashboard. Use a long random string, e.g. openssl rand -hex 32
+KEYSTORE_SECRET= # Encrypts provider keys added in the dashboard. Any random string of 16+ characters, e.g. openssl rand -hex 32
