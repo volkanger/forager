@@ -294,11 +294,11 @@
         <ol class="trail reveal">
           <li>
             <h3>Deploy to Cloudflare</h3>
-            <p>Click the button. Cloudflare copies the repo to your GitHub and creates the Worker and its Durable Object. It asks for two secrets: <code>PROXY_API_KEY</code> (your router password) and <code>KEYSTORE_SECRET</code> (any random string, 16+ characters).</p>
+            <p>Click the button and pick a project name. Cloudflare copies the repo to your GitHub and creates the Worker and its Durable Object. There's nothing to fill in.</p>
           </li>
           <li>
-            <h3>Add your keys</h3>
-            <p>Open <code>/dashboard</code> on your Worker, connect with your router password, and add provider keys. Each one is tested as soon as you add it.</p>
+            <h3>Create your key, add providers</h3>
+            <p>Open <code>/dashboard</code> on your new Worker and click <b>Create my API key</b>. Save it, then add a key for each free provider you use. Each one is tested as soon as you add it.</p>
           </li>
           <li>
             <h3>Point your apps at it</h3>
@@ -318,11 +318,9 @@ reply = client.chat.completions.create(
     messages=[{<span class="r">"role"</span>: <span class="r">"user"</span>, <span class="r">"content"</span>: <span class="r">"Write a haiku about moss"</span>}],
 )</pre>
           <div class="code-label">Or from the command line</div>
-<pre class="code"><span class="c"># clone, set two secrets, deploy</span>
+<pre class="code"><span class="c"># clone and deploy, then open /dashboard</span>
 git clone <span data-repo-text>https://github.com/volkanger/forager</span>
 cd forager && npm install
-openssl rand -hex 32 | npx wrangler secret put PROXY_API_KEY
-openssl rand -hex 32 | npx wrangler secret put KEYSTORE_SECRET
 npx wrangler deploy</pre>
         </div>
       </div>

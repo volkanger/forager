@@ -32,10 +32,10 @@
     //   "GATEWAY_CACHE_TTL": "3600"     – AI Gateway caches identical prompts (saves quota)
   }
 
-  // Secrets (prompted by the Deploy button, or `wrangler secret put NAME`):
-  //   PROXY_API_KEY    – bearer token your clients and the dashboard use (comma-separate for several)
-  //   KEYSTORE_SECRET  – encrypts provider keys added in the dashboard (any random string, 16+ chars)
-  // Optional secrets:
+  // No secrets are required: open /dashboard after deploying to create your API key.
+  // Optional secrets (`wrangler secret put NAME`):
+  //   PROXY_API_KEY    – a fixed API key instead of (or besides) dashboard-created keys
+  //   KEYSTORE_SECRET  – your own encryption secret for provider keys (16+ chars) instead of a generated one
   //   ADMIN_API_KEY    – separate key for /admin/* (defaults to PROXY_API_KEY)
   //   CF_AIG_TOKEN     – if the AI Gateway has "Authenticated Gateway" turned on
   //   Provider keys (GROQ_API_KEY, GEMINI_API_KEY, …) – usually easier to add in the dashboard

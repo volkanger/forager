@@ -13,7 +13,7 @@ import {
 } from "./catalog";
 import { nextReset, periodId } from "./cycles";
 import type { Env } from "./env";
-import { importMasterKey, seal, unseal } from "./keystore";
+import { importMasterKey, randomHex, seal, sha256Hex, unseal } from "./keystore";
 import { cloudflareAccount } from "./account";
 
 type Usage = { p: string; req: number; tok: number; usd: number };
@@ -91,6 +91,17 @@ interface StatDelta {
   latencyMs: number;
 }
 
+interface RouterKey {
+  id: string;
+  label: string;
+  /** First characters of the key, shown so you can tell keys apart. */
+  prefix: string;
+  hash: string;
+  createdAt: number;
+}
+
+const SETUP_WINDOW_MS = 24 * 3_600_000;
+
 interface StoredKey {
   id: string;
   provider: string;
@@ -128,6 +139,8 @@ export class Tracker extends DurableObject<Env> {
   private githubSync: Promise<unknown> | null = null;
   private storedKeys: StoredKey[] = [];
   private unreadableKeys = 0;
+  private keystoreSource: "secret" | "generated" = "generated";
+  private routerKeys: RouterKey[] = [];
   private accountId: string | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -165,7 +178,21 @@ export class Tracker extends DurableObject<Env> {
       if (free) this.openRouterFree = JSON.parse(free);
 
       this.accountId = (await cloudflareAccount(this.env)).accountId;
+      if (!this.kvGet("first_seen")) this.kvSet("first_seen", String(Date.now()));
+      this.routerKeys = JSON.parse(this.kvGet("router_keys") ?? "[]");
+
+      // KEYSTORE_SECRET wins; otherwise a random key is generated once and kept in this Durable Object.
       this.master = await importMasterKey(this.env.KEYSTORE_SECRET);
+      if (this.master) {
+        this.keystoreSource = "secret";
+      } else {
+        let generated = this.kvGet("keystore_key");
+        if (!generated) {
+          generated = randomHex();
+          this.kvSet("keystore_key", generated);
+        }
+        this.master = await importMasterKey(generated);
+      }
       const rows = this.sql
         .exec<{ id: string; provider: string; label: string; last4: string; ciphertext: string; iv: string; created_at: number }>(
           `SELECT id, provider, label, last4, ciphertext, iv, created_at FROM provider_keys ORDER BY created_at`,
@@ -486,6 +513,65 @@ export class Tracker extends DurableObject<Env> {
     return { count: models.length };
   }
 
+  // ---------------------------------------------------------------- setup and router API keys
+
+  /** Whether this Forager has an owner yet. Secret-managed installs (PROXY_API_KEY) count as claimed. */
+  setupStatus(): { claimed: boolean; locked: boolean; managedBySecret: boolean } {
+    const managedBySecret = !!this.env.PROXY_API_KEY;
+    const claimed = managedBySecret || this.routerKeys.length > 0;
+    const firstSeen = Number(this.kvGet("first_seen") ?? Date.now());
+    return { claimed, locked: !claimed && Date.now() - firstSeen > SETUP_WINDOW_MS, managedBySecret };
+  }
+
+  /** First-run setup: creates the first API key. Only works while unclaimed and inside the setup window. */
+  async claim(): Promise<{ key: string } | { error: string; status: number }> {
+    const status = this.setupStatus();
+    if (status.claimed) return { error: "This Forager already has an owner. Sign in with your API key.", status: 409 };
+    if (status.locked) {
+      return {
+        error: "Setup expired: nobody claimed this Forager within 24 hours. Set a PROXY_API_KEY secret with Wrangler to take ownership.",
+        status: 423,
+      };
+    }
+    return this.createRouterKey("First key");
+  }
+
+  async createRouterKey(label?: string): Promise<{ key: string; id: string; prefix: string }> {
+    const key = `fgr_${randomHex()}`;
+    const entry: RouterKey = {
+      id: crypto.randomUUID(),
+      label: (label ?? "").trim().slice(0, 60) || `Key created ${new Date().toISOString().slice(0, 10)}`,
+      prefix: key.slice(0, 10),
+      hash: await sha256Hex(key),
+      createdAt: Date.now(),
+    };
+    this.routerKeys.push(entry);
+    this.kvSet("router_keys", JSON.stringify(this.routerKeys));
+    return { key, id: entry.id, prefix: entry.prefix };
+  }
+
+  hasRouterKey(hash: string): boolean {
+    return this.routerKeys.some((k) => k.hash === hash);
+  }
+
+  listRouterKeys() {
+    return {
+      managedBySecret: !!this.env.PROXY_API_KEY,
+      keys: this.routerKeys.map(({ id, label, prefix, createdAt }) => ({ id, label, prefix, createdAt })),
+    };
+  }
+
+  revokeRouterKey(id: string): { revoked: boolean } | { error: string; status: number } {
+    const remaining = this.routerKeys.filter((k) => k.id !== id);
+    if (remaining.length === this.routerKeys.length) return { revoked: false };
+    if (remaining.length === 0 && !this.env.PROXY_API_KEY) {
+      return { error: "You can't revoke your last API key. Create a new one first.", status: 400 };
+    }
+    this.routerKeys = remaining;
+    this.kvSet("router_keys", JSON.stringify(this.routerKeys));
+    return { revoked: true };
+  }
+
   // ---------------------------------------------------------------- waitlist
 
   /**
@@ -686,6 +772,7 @@ export class Tracker extends DurableObject<Env> {
   listKeys() {
     return {
       keystoreReady: !!this.master,
+      keystoreSource: this.keystoreSource,
       unreadableKeys: this.unreadableKeys,
       providers: this.providers().map((p) => ({
         id: p.id,

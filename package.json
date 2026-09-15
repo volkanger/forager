@@ -19,12 +19,6 @@
   },
   "cloudflare": {
     "bindings": {
-      "PROXY_API_KEY": {
-        "description": "Your router password: apps send it as a Bearer token, and you use it to sign in to /dashboard. Use a long random string (for example the output of openssl rand -hex 32) and save it in your password manager."
-      },
-      "KEYSTORE_SECRET": {
-        "description": "Encrypts the provider API keys you add in the dashboard. Any random string of 16+ characters (for example openssl rand -hex 32). If you change it later, keys added in the dashboard must be added again."
-      },
       "AI_GATEWAY_ID": {
         "description": "Optional. Name of a Cloudflare AI Gateway to log requests through. If it doesn't exist, Forager calls providers directly."
       },

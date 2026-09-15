@@ -19,6 +19,15 @@ export async function importMasterKey(secret: string | undefined): Promise<Crypt
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
+/** 32 random bytes as hex: used when no KEYSTORE_SECRET is set, and for generated API keys. */
+export function randomHex(bytes = 32): string {
+  return toHex(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+
+export async function sha256Hex(value: string): Promise<string> {
+  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value))));
+}
+
 export async function seal(master: CryptoKey, plaintext: string): Promise<{ ciphertext: string; iv: string }> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, master, encoder.encode(plaintext));

@@ -1,6 +1,7 @@
 import { splitKeys } from "./catalog";
 import type { Env } from "./env";
 import { cloudflareAccount, type CloudflareAccount } from "./account";
+import { sha256Hex } from "./keystore";
 import type { Route, SettleInput } from "./tracker";
 
 export { Tracker } from "./tracker";
@@ -29,13 +30,26 @@ export default {
       });
     }
 
-    if (!env.PROXY_API_KEY) return apiError(500, "PROXY_API_KEY secret is not set; refusing to run an open proxy.");
-    const isAdmin = path.startsWith("/admin/");
-    if (!(await authorized(request, isAdmin ? (env.ADMIN_API_KEY ?? env.PROXY_API_KEY) : env.PROXY_API_KEY))) {
-      return apiError(401, "Invalid API key.", "authentication_error");
+    const tracker = env.TRACKER.get(env.TRACKER.idFromName("global"));
+
+    // First-run setup, used by the dashboard before anyone owns this Forager.
+    if (path === "/api/setup") {
+      if (request.method === "GET") return json(await tracker.setupStatus());
+      if (request.method === "POST") {
+        const result = await tracker.claim();
+        return "error" in result ? apiError(result.status, result.error, "setup_error") : json(result, 201);
+      }
     }
 
-    const tracker = env.TRACKER.get(env.TRACKER.idFromName("global"));
+    const isAdmin = path.startsWith("/admin/");
+    if (!(await authorized(request, env, tracker, isAdmin))) {
+      const { claimed } = await tracker.setupStatus();
+      return apiError(
+        401,
+        claimed ? "Invalid API key." : "This Forager isn't set up yet. Open /dashboard to create your API key.",
+        "authentication_error",
+      );
+    }
     try {
       if (path === "/v1/chat/completions" && request.method === "POST") return await chatCompletions(request, env, ctx);
       if (path === "/v1/models" && request.method === "GET") {
@@ -65,6 +79,18 @@ export default {
           const body = (await request.json().catch(() => ({}))) as { email?: string };
           return json(await tracker.removeFromWaitlist(String(body.email ?? "").trim().toLowerCase()));
         }
+      }
+      if (path === "/admin/router-keys") {
+        if (request.method === "GET") return json(await tracker.listRouterKeys());
+        if (request.method === "POST") {
+          const body = (await request.json().catch(() => ({}))) as { label?: string };
+          return json(await tracker.createRouterKey(body.label), 201);
+        }
+      }
+      if (path.startsWith("/admin/router-keys/") && request.method === "DELETE") {
+        const result = await tracker.revokeRouterKey(decodeURIComponent(path.slice("/admin/router-keys/".length)));
+        routerKeyCache.clear();
+        return "error" in result ? apiError(result.status, result.error) : json(result);
       }
       if (path === "/admin/keys") {
         if (request.method === "GET") return json(await tracker.listKeys());
@@ -108,10 +134,13 @@ async function landingEvent(request: Request, env: Env): Promise<Response> {
   return new Response(null, { status: 204, headers: WAITLIST_CORS });
 }
 
+/** Random per-isolate salt for installs without secrets, so IP hashes can't be reversed by brute force. */
+let isolateSalt: string | undefined;
+
 /** Short, daily-salted hash of the caller's IP, used only for rate limiting. */
 async function clientHash(request: Request, env: Env): Promise<string> {
   const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const salt = `${env.KEYSTORE_SECRET ?? env.PROXY_API_KEY ?? ""}:${new Date().toISOString().slice(0, 10)}`;
+  const salt = `${env.KEYSTORE_SECRET ?? env.PROXY_API_KEY ?? (isolateSalt ??= crypto.randomUUID())}:${new Date().toISOString().slice(0, 10)}`;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${ip}`));
   return [...new Uint8Array(digest).slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -462,16 +491,38 @@ function estimateTokens(text: string): number {
 
 // ------------------------------------------------------------------ admin helpers
 
-async function authorized(request: Request, keys: string): Promise<boolean> {
+/** Per-isolate cache of router-key checks, so most requests skip the Durable Object round trip. */
+const routerKeyCache = new Map<string, { ok: boolean; until: number }>();
+
+/**
+ * Accepts keys from the PROXY_API_KEY secret (or ADMIN_API_KEY for /admin) and API keys created in the
+ * dashboard. Dashboard keys are stored as SHA-256 hashes; revoking one takes effect within a minute.
+ */
+async function authorized(request: Request, env: Env, tracker: DurableObjectStub<import("./tracker").Tracker>, admin: boolean): Promise<boolean> {
   const header = request.headers.get("authorization");
-  const token = header?.replace(/^Bearer\s+/i, "") ?? request.headers.get("x-api-key") ?? "";
+  const token = (header?.replace(/^Bearer\s+/i, "") ?? request.headers.get("x-api-key") ?? "").trim();
   if (!token) return false;
+
+  const secretKeys = admin ? (env.ADMIN_API_KEY ?? env.PROXY_API_KEY) : env.PROXY_API_KEY;
   const enc = new TextEncoder();
   const a = enc.encode(token);
-  return splitKeys(keys).some((k) => {
+  const matchesSecret = splitKeys(secretKeys).some((k) => {
     const b = enc.encode(k);
     return a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b);
   });
+  if (matchesSecret) return true;
+  // With ADMIN_API_KEY set, only that key may use /admin.
+  if (admin && env.ADMIN_API_KEY) return false;
+  if (!/^fgr_[0-9a-f]{64}$/.test(token)) return false;
+
+  const hash = await sha256Hex(token);
+  const now = Date.now();
+  const cached = routerKeyCache.get(hash);
+  if (cached && cached.until > now) return cached.ok;
+  const ok = await tracker.hasRouterKey(hash);
+  if (routerKeyCache.size > 1000) routerKeyCache.clear();
+  routerKeyCache.set(hash, { ok, until: now + (ok ? 60_000 : 10_000) });
+  return ok;
 }
 
 function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {

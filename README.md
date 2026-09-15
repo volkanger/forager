@@ -23,12 +23,11 @@ client ──► Worker /v1/chat/completions
 
 ## Deploy in one click
 
-1. Click **Deploy to Cloudflare** above and sign in. Cloudflare copies this repo to your GitHub or GitLab account and creates the Worker and its Durable Object.
-2. When asked for secrets, fill in:
-   - `PROXY_API_KEY`: your router password. Use a long random string (`openssl rand -hex 32`) and save it in a password manager.
-   - `KEYSTORE_SECRET`: another random string of 16+ characters. It encrypts the provider keys you add later.
-3. Open `https://forager.<your-subdomain>.workers.dev`, paste `PROXY_API_KEY` and click **Connect**.
-4. In **Provider keys**, add a key for each free provider you use. Every provider has a "get a key" link, and a test request runs as soon as you add one. Kilo works with no key, so `auto` answers right away.
+1. Click **Deploy to Cloudflare** above, sign in, and pick a project name. Cloudflare copies this repo to your GitHub or GitLab account and creates the Worker and its Durable Object. There are no secrets to fill in.
+2. Open `https://<project-name>.<your-subdomain>.workers.dev/dashboard` and click **Create my API key**. Save the key in your password manager: it's shown once. Your apps use it for `/v1`, and you use it to sign in to the dashboard.
+3. In **Provider keys**, add a key for each free provider you use. Every provider has a "get a key" link, and a test request runs as soon as you add one. Kilo works with no key, so `auto` answers right away.
+
+Open the dashboard soon after deploying: if nobody creates the first key within 24 hours of the Worker's first visit, setup locks, and you'd need `npx wrangler secret put PROXY_API_KEY` to take ownership.
 
 **Optional, AI Gateway logging:** create a gateway named `forager` under **AI → AI Gateway** in the Cloudflare dashboard. If you turn on *Authenticated Gateway*, add a `CF_AIG_TOKEN` secret (a token with "AI Gateway: Run"). Until then, Forager calls providers directly.
 
@@ -40,9 +39,8 @@ Pushes to your copy of the repo redeploy automatically.
 git clone https://github.com/volkanger/forager && cd forager
 npm install
 npx wrangler login
-openssl rand -hex 32 | npx wrangler secret put PROXY_API_KEY
-openssl rand -hex 32 | npx wrangler secret put KEYSTORE_SECRET
 npx wrangler deploy
+# then open /dashboard on the Worker URL and click "Create my API key"
 ```
 
 To serve it on your own domain (the zone must be on your Cloudflare account): `npx wrangler deploy --domain llm.example.com`.
@@ -69,13 +67,15 @@ To serve it on your own domain (the zone must be on your Cloudflare account): `n
 
 ## Adding provider keys
 
-**From the dashboard (easiest):** in **Provider keys**, pick a provider, paste its key and click **Add key**. Forager encrypts the key (AES-256-GCM with `KEYSTORE_SECRET`), stores only the ciphertext, and runs a test request right away. The dashboard and API never show a key again, only its last 4 characters. Each provider has a "get a key" link. Providers without a key are skipped.
+**From the dashboard (easiest):** in **Provider keys**, pick a provider, paste its key and click **Add key**. Forager encrypts the key with AES-256-GCM, stores only the ciphertext, and runs a test request right away. The dashboard and API never show a key again, only its last 4 characters. Each provider has a "get a key" link. Providers without a key are skipped.
 
 **Or as Wrangler secrets:** `npx wrangler secret put GROQ_API_KEY` and so on (each provider's `keyEnv` in `src/catalog.ts`). Comma-separate several keys you're allowed to use. Secret keys and dashboard keys are combined.
 
 **From a local FreeLLMAPI install:** `node scripts/import-freellmapi-keys.mjs --apply`.
 
-Changing `KEYSTORE_SECRET` makes keys added in the dashboard unreadable; the dashboard flags them so you can remove and re-add them.
+**Encryption key:** by default Forager generates one and keeps it in the same Durable Object. That keeps provider keys out of every API response and log, but anyone with access to the Durable Object's storage could decrypt them. For stronger separation, set a `KEYSTORE_SECRET` secret (16+ characters) before adding keys. Changing or adding it later makes existing dashboard keys unreadable; the dashboard flags them so you can re-add them.
+
+**API keys for your apps:** create one per app under **Your API keys** in the dashboard and revoke any of them later (takes effect within a minute). A `PROXY_API_KEY` secret, if set, works alongside them.
 
 `CF_API_TOKEN` (Workers AI) needs "Workers AI: Read" and "Edit". Providers marked **card on file** (Vercel) unlock their free tier only after you add a payment method; Forager keeps 20% headroom on them, and you're only charged if you buy credits there.
 
@@ -83,11 +83,11 @@ Changing `KEYSTORE_SECRET` makes keys added in the dashboard unreadable; the das
 
 ```bash
 curl https://forager.<your-subdomain>.workers.dev/v1/chat/completions \
-  -H "Authorization: Bearer $PROXY_API_KEY" -H "content-type: application/json" \
+  -H "Authorization: Bearer $FORAGER_API_KEY" -H "content-type: application/json" \
   -d '{"model":"auto","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-Any OpenAI SDK works if you set `base_url` to `…/v1` and `api_key` to `PROXY_API_KEY`. Each response has an `x-routed-via: provider/model` header.
+Any OpenAI SDK works if you set `base_url` to `…/v1` and `api_key` to your Forager API key. Each response has an `x-routed-via: provider/model` header.
 
 | `model` | Behaviour |
 |---|---|
@@ -101,7 +101,7 @@ Requests that use `tools` or image inputs only go to models tagged with those ab
 
 ## Admin API
 
-Send the same bearer token, or `ADMIN_API_KEY` if you set it.
+Send any of your API keys as a bearer token (or only `ADMIN_API_KEY`, if you set that secret).
 
 | Endpoint | Purpose |
 |---|---|
@@ -114,7 +114,9 @@ Send the same bearer token, or `ADMIN_API_KEY` if you set it.
 | `POST /admin/reset` `{"match":"groq"}` | Clear counters and cooldowns (all of them if you leave out `match`) |
 | `GET /admin/keys` | Providers with key counts, last 4 characters of stored keys, and "get a key" links |
 | `POST /admin/keys` `{"provider","key","label"}` | Encrypt and store a provider key |
-| `DELETE /admin/keys/<id>` | Remove a stored key |
+| `DELETE /admin/keys/<id>` | Remove a stored provider key |
+| `GET /admin/router-keys` · `POST` `{"label"}` · `DELETE /admin/router-keys/<id>` | List, create and revoke your Forager API keys |
+| `GET /api/setup` · `POST /api/setup` (no auth) | First-run status, and create the first API key while unclaimed |
 
 To change limits, run `GET /admin/catalog`, edit the `catalog` object, and `PUT` it back. For example, after a one-time $10 OpenRouter credit purchase, raise `openrouter.limits` day requests from 50 to 1000.
 
