@@ -118,7 +118,7 @@ const groqLimits = (rpd: number, tpm: number, tpd?: number): Limit[] => [
 //   nex-n2.5-pro and dots-3-note-preview returned empty content. Gemini and four OpenRouter vision
 //   models were in cooldown and are untested.
 export const DEFAULT_CATALOG: Catalog = {
-  version: "2026-09-15",
+  version: "2026-09-16",
   safetyMargin: 0.9,
   // Each chat request costs ~1 Worker request + 2 Durable Object requests.
   // Workers Free = 100k requests/day, DO Free = 100k requests/day.
@@ -540,6 +540,125 @@ export const DEFAULT_CATALOG: Catalog = {
         { id: "poolside/laguna-s-2.1-free", tags: ["tools"], priority: 34 },
         { id: "inclusionai/ling-3.0-flash-vl-free", tags: ["tools", "vision"], priority: 32 },
         { id: "inclusionai/ling-3.0-flash-fin-free", tags: ["tools"], priority: 24 },
+      ],
+    },
+    {
+      id: "amd",
+      name: "AMD Radeon Cloud Token Factory",
+      keyEnv: "AMD_RADEON_API_KEY",
+      signupUrl: "https://developer.amd.com.cn/radeon/tokenfactory",
+      // Added 2026-09-16 from docs (amd-aim.github.io/radeon-cloud-docs, dated 2026-09-15); untested.
+      // The global console (radeon-global.anruicloud.com) documents no API path; its /v1, /api/v1 and
+      // /radeon/api/v1 all 404, so a global key may need a different URL — check when testing.
+      directUrl: "https://developer.amd.com.cn/radeon/api/v1/chat/completions",
+      modelsUrl: "https://developer.amd.com.cn/radeon/api/v1/models",
+      // One docs page says the daily quota resets at midnight Beijing time, another says rolling.
+      resetTz: "Asia/Shanghai",
+      // Thinking is on by default and reasoning comes before the first content byte.
+      timeoutMs: 90_000,
+      notes:
+        "Public Free Model APIs: $10 of usage per day per account, 20 req/min per account, 8 concurrent per key. AMD publishes no per-model prices, so Forager tracks the low end of AMD's own '~10M-111M tokens/day' estimate. Terms (2026-09-10) forbid exposing the API behind a proxy, gateway or aggregator and pooling keys: one personal key for your own use only. Thinking is on by default and counts against max_tokens.",
+      limits: [{ window: "minute", requests: 20 }, { window: "day", tokens: 10_000_000 }],
+      models: [
+        { id: "DeepSeek-V4.1-Flash", tags: ["smart", "tools", "vision", "reasoning", "coding"], priority: 66, context: 1_048_576 },
+        { id: "Qwen3.8-Flash-Next", tags: ["smart", "tools", "vision", "reasoning"], priority: 60, context: 262_144 },
+        { id: "DeepSeek-V4-Flash", tags: ["smart", "tools", "reasoning", "coding"], priority: 59, context: 1_048_576 },
+        { id: "DeepSeek-V4-Flash-Vision-Exp", tags: ["tools", "vision", "reasoning"], priority: 56, context: 1_048_576 },
+        { id: "Qwen3.8-27B", tags: ["tools", "vision", "reasoning"], priority: 50, context: 131_072 },
+        { id: "MiniCPM5-2B", tags: ["fast", "tools"], priority: 20, context: 131_072 },
+      ],
+    },
+    {
+      id: "ovh",
+      name: "OVHcloud AI Endpoints (anonymous)",
+      // Never add a key: authenticated AI Endpoints calls are billed per token. Anonymous only.
+      keyEnv: "OVH_AI_ENDPOINTS_KEY",
+      keyless: true,
+      directUrl: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions",
+      modelsUrl: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/models",
+      resetTz: "UTC",
+      // Tested 2026-09-16 without a key, red 32x32 PNG: Qwen2.5-VL-72B and Mistral-Small-3.2 both answered
+      // "Red.". Docs say 2 req/min per IP per model, but the third request in a minute got a 429 whichever
+      // model it named, and the throttle then held for several minutes. So 2/min across the provider, and
+      // only as a vision fallback (noAuto). From the live Worker the same day, 1 of 6 requests got through
+      // ("Red.", ~1.2 s); the rest were immediate 429s (~1 s), because other Cloudflare customers already
+      // spend the shared egress IPs' allowance. Cheap to try last, never something to rely on.
+      notes:
+        "No key: 2 req/min per IP, and Workers share egress IPs with other Cloudflare customers, so most attempts get a quick 429 (1 of 6 succeeded, 2026-09-16). Do NOT add a key: authenticated calls are billed. Last-resort vision fallback only (auto:vision).",
+      limits: [{ window: "minute", requests: 2 }],
+      models: [
+        { id: "Qwen2.5-VL-72B-Instruct", tags: ["vision"], priority: 30, context: 32_000, noAuto: true },
+        { id: "Mistral-Small-3.2-24B-Instruct-2506", tags: ["tools", "vision"], priority: 28, context: 128_000, noAuto: true },
+        // Untested: 429 on every attempt 2026-09-16 (throttle from the calls above). Vision per AMD's catalog.
+        { id: "Qwen3.8-27B", tags: ["tools", "vision", "reasoning"], priority: 27, context: 131_072, noAuto: true },
+      ],
+    },
+    {
+      id: "tokenharbor",
+      name: "Token Harbor (:free models)",
+      keyEnv: "TOKENHARBOR_API_KEY",
+      signupUrl: "https://tokenharbor.ai/dashboard",
+      directUrl: "https://tokenharbor.ai/v1/chat/completions",
+      modelsUrl: "https://tokenharbor.ai/v1/models",
+      resetTz: "UTC",
+      // $0 guard: Token Harbor also sells Claude/GPT; per its quickstart only ids ending in ":free"
+      // never charge the balance.
+      modelIdPattern: ":free$",
+      allowUnlisted: true,
+      notes:
+        "Free monthly allowance (4 windows of 7 days), size not published; no card. Blocks mainland China, Hong Kong and Macau. Free-model prompts may be kept for diagnostics and product improvement.",
+      models: [
+        // Added 2026-09-16 from the pricing page ("DeepSeek V4.1 Flash", "MiMo V2.5"); exact ids are
+        // guesses until a key can list /v1/models.
+        { id: "deepseek-v4.1-flash:free", tags: ["smart", "tools", "vision", "coding"], priority: 57, context: 1_048_576 },
+        { id: "mimo-v2.5:free", tags: ["tools", "vision"], priority: 44 },
+      ],
+    },
+    {
+      id: "orcarouter",
+      name: "OrcaRouter (-free models)",
+      keyEnv: "ORCAROUTER_API_KEY",
+      signupUrl: "https://www.orcarouter.ai",
+      directUrl: "https://api.orcarouter.ai/v1/chat/completions",
+      modelsUrl: "https://api.orcarouter.ai/v1/models",
+      resetTz: "UTC",
+      // $0 guard: OrcaRouter bills every other model at upstream prices.
+      modelIdPattern: "-free$",
+      allowUnlisted: true,
+      notes:
+        "Hacker plan, no card: free models are rate-limited with unpublished 'conservative caps' (429 + Retry-After). Topping up raises the limits.",
+      models: [
+        // Added 2026-09-16 from the public model list; untested. glm-5.3-flash-free lists text, image
+        // and video input.
+        { id: "z-ai/glm-5.3-flash-free", tags: ["smart", "tools", "vision", "coding"], priority: 55, context: 1_000_000 },
+        { id: "deepseek/deepseek-v4-flash-free", tags: ["smart", "tools", "coding"], priority: 53 },
+        { id: "tencent/hy3-free", tags: ["tools"], priority: 39 },
+      ],
+    },
+    {
+      id: "electronhub",
+      name: "Electron Hub (:free, 10 req/day)",
+      keyEnv: "ELECTRONHUB_API_KEY",
+      signupUrl: "https://electronhub.ai",
+      directUrl: "https://api.electronhub.ai/v1/chat/completions",
+      modelsUrl: "https://api.electronhub.ai/v1/models",
+      // Free "Neutrinos" reset at 21:00 UTC, which is midnight at UTC+3.
+      resetTz: "Etc/GMT-3",
+      // $0 guard: only :free vision models that cost 1 Neutrino per request (/v1/models, 2026-09-16).
+      // Others cost 2-5 per request, which a request counter would undercount, and the :free Claude
+      // model's provenance is unclear.
+      modelIdPattern:
+        "^(gemma-4-26b-a4b-it|gemma-4-31b-it|mistral-small-3\\.2-24b-instruct|qwen3\\.6-27b|qwen3\\.6-35b-a3b|ministral-3-8b-instruct):free$",
+      notes:
+        "10 free requests/day (reset 21:00 UTC); failed and cancelled requests count too. Watching ads raises it to 200, which Forager can't do. Kept for vision only (auto:vision) so text traffic can't spend it.",
+      limits: [{ window: "day", requests: 10 }],
+      models: [
+        { id: "qwen3.6-27b:free", tags: ["tools", "vision"], priority: 25, context: 64_000, noAuto: true },
+        { id: "gemma-4-31b-it:free", tags: ["tools", "vision", "reasoning"], priority: 24, context: 40_000, noAuto: true },
+        { id: "mistral-small-3.2-24b-instruct:free", tags: ["tools", "vision"], priority: 23, context: 64_000, noAuto: true },
+        { id: "gemma-4-26b-a4b-it:free", tags: ["tools", "vision", "reasoning"], priority: 22, context: 64_000, noAuto: true },
+        { id: "qwen3.6-35b-a3b:free", tags: ["tools", "vision", "reasoning"], priority: 21, context: 40_000, noAuto: true },
+        { id: "ministral-3-8b-instruct:free", tags: ["fast", "tools", "vision"], priority: 18, context: 64_000, noAuto: true },
       ],
     },
     {
