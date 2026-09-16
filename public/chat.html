@@ -373,6 +373,15 @@
     if (force || s.scrollHeight - s.scrollTop - s.clientHeight < 140) s.scrollTop = s.scrollHeight;
   }
 
+  // The `retry-after` header is capped at 60 s so OpenAI SDK clients don't sleep through a whole
+  // cooldown; `error.retry_after_seconds` carries the real wait, which is what a person wants to read.
+  function waitText(seconds) {
+    if (seconds < 90) return "about a minute";
+    if (seconds < 5400) return "about " + Math.round(seconds / 60) + " min";
+    if (seconds < 172800) return "about " + Math.round(seconds / 3600) + " h";
+    return "about " + Math.round(seconds / 86400) + " days";
+  }
+
   // ---------- API ----------
   function api(path, opts) {
     opts = opts || {};
@@ -440,8 +449,8 @@
           var msg = t;
           try { var j = JSON.parse(t); msg = (j.error && j.error.message) || (j.choices && j.choices[0].message.content) || t; if (j.choices) { reply.content = msg; return; } } catch (e) {}
           if (res.status === 401) { showSignin("Your key was rejected. Sign in again."); }
-          var wait = res.headers.get("retry-after");
-          throw new Error(msg + (wait ? " Try again in about " + Math.ceil(Number(wait) / 60) + " min." : ""));
+          var wait = (j && j.error && j.error.retry_after_seconds) || Number(res.headers.get("retry-after")) || 0;
+          throw new Error(msg + (wait ? " Try again in " + waitText(wait) + "." : ""));
         });
       }
       var reader = res.body.getReader(), decoder = new TextDecoder(), buffer = "", pending = false;
