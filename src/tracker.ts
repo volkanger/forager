@@ -57,6 +57,8 @@ export interface Route {
   headers?: Record<string, string>;
   streamUsage: boolean;
   timeoutMs?: number;
+  /** Copied from the provider: bill `prompt_tokens - cached_tokens` instead of the full prompt. */
+  cachedTokensFree?: boolean;
   price?: ModelDef["price"];
   estIn: number;
   estOut: number;
@@ -74,6 +76,8 @@ export interface SettleInput {
   status: number;
   inTok?: number;
   outTok?: number;
+  /** Prompt tokens the provider served from its own cache (`prompt_tokens_details.cached_tokens`). */
+  cachedTok?: number;
   latencyMs: number;
   cooldownMs?: number;
   /** key = every model on this key, route = this model on this key, model = this model on every key. */
@@ -91,6 +95,7 @@ interface StatDelta {
   ok: number;
   tokIn: number;
   tokOut: number;
+  tokCached: number;
   usd: number;
   latencyMs: number;
 }
@@ -169,8 +174,16 @@ export class Tracker extends DurableObject<Env> {
         day TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
         requests INTEGER NOT NULL DEFAULT 0, ok INTEGER NOT NULL DEFAULT 0,
         tok_in INTEGER NOT NULL DEFAULT 0, tok_out INTEGER NOT NULL DEFAULT 0,
+        tok_cached INTEGER NOT NULL DEFAULT 0,
         usd REAL NOT NULL DEFAULT 0, latency_ms INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (day, provider, model)) WITHOUT ROWID`);
+      // stats gained tok_cached on 2026-09-16; CREATE TABLE IF NOT EXISTS never touches an existing
+      // table, so add the column for Forager installs that predate it. Throws once it is there.
+      try {
+        this.sql.exec(`ALTER TABLE stats ADD COLUMN tok_cached INTEGER NOT NULL DEFAULT 0`);
+      } catch {
+        // Already migrated.
+      }
       this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS events (day TEXT NOT NULL, name TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, name)) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS github_daily (
@@ -312,6 +325,7 @@ export class Tracker extends DurableObject<Env> {
             headers: p.headers,
             streamUsage: !!p.streamUsage,
             timeoutMs: p.timeoutMs,
+            cachedTokensFree: p.cachedTokensFree,
             price: m.price,
             estIn: input.estIn,
             estOut: input.estOut,
@@ -338,10 +352,14 @@ export class Tracker extends DurableObject<Env> {
     const r = s.route;
     const inTok = s.ok ? (s.inTok ?? r.estIn) : 0;
     const outTok = s.ok ? (s.outTok ?? r.estOut) : 0;
-    const usd = costUsd(r.price, inTok, outTok);
+    const cachedTok = s.ok ? Math.min(s.cachedTok ?? 0, inTok) : 0;
+    // Cache hits are always reported, but only discounted against quota for providers proven to
+    // leave them out of their own rate limits — see ProviderDef.cachedTokensFree.
+    const billedIn = r.cachedTokensFree ? inTok - cachedTok : inTok;
+    const usd = costUsd(r.price, billedIn, outTok);
 
     // Request stays counted even on failure (providers count them too); tokens/spend are corrected.
-    for (const scope of r.scopes) this.bump(scope, now, 0, inTok + outTok - (r.estIn + r.estOut), usd - r.estUsd);
+    for (const scope of r.scopes) this.bump(scope, now, 0, billedIn + outTok - (r.estIn + r.estOut), usd - r.estUsd);
 
     if (s.ok) this.sql.exec(`DELETE FROM strikes WHERE id = ?`, `c:${r.provider}/${r.model}`);
 
@@ -382,11 +400,12 @@ export class Tracker extends DurableObject<Env> {
 
     const day = periodId("day", now, "UTC");
     const key = `${day}|${r.provider}|${r.model}`;
-    const st = this.pendingStats.get(key) ?? { day, provider: r.provider, model: r.model, requests: 0, ok: 0, tokIn: 0, tokOut: 0, usd: 0, latencyMs: 0 };
+    const st = this.pendingStats.get(key) ?? { day, provider: r.provider, model: r.model, requests: 0, ok: 0, tokIn: 0, tokOut: 0, tokCached: 0, usd: 0, latencyMs: 0 };
     st.requests += 1;
     st.ok += s.ok ? 1 : 0;
     st.tokIn += inTok;
     st.tokOut += outTok;
+    st.tokCached += cachedTok;
     st.usd += usd;
     st.latencyMs += Math.round(s.latencyMs);
     this.pendingStats.set(key, st);
@@ -476,7 +495,7 @@ export class Tracker extends DurableObject<Env> {
       providers,
       cooldowns,
       today: rows(
-        `SELECT provider, model, requests, ok, tok_in, tok_out, usd, latency_ms FROM stats WHERE day = ? ORDER BY requests DESC`,
+        `SELECT provider, model, requests, ok, tok_in, tok_out, tok_cached, usd, latency_ms FROM stats WHERE day = ? ORDER BY requests DESC`,
         today,
       ),
       week: rows(
@@ -1168,10 +1187,11 @@ export class Tracker extends DurableObject<Env> {
     this.dirty.clear();
     for (const s of this.pendingStats.values()) {
       this.sql.exec(
-        `INSERT INTO stats (day, provider, model, requests, ok, tok_in, tok_out, usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO stats (day, provider, model, requests, ok, tok_in, tok_out, tok_cached, usd, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(day, provider, model) DO UPDATE SET
            requests = requests + excluded.requests, ok = ok + excluded.ok,
            tok_in = tok_in + excluded.tok_in, tok_out = tok_out + excluded.tok_out,
+           tok_cached = tok_cached + excluded.tok_cached,
            usd = usd + excluded.usd, latency_ms = latency_ms + excluded.latency_ms`,
         s.day,
         s.provider,
@@ -1180,6 +1200,7 @@ export class Tracker extends DurableObject<Env> {
         s.ok,
         s.tokIn,
         s.tokOut,
+        s.tokCached,
         s.usd,
         s.latencyMs,
       );

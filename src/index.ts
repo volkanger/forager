@@ -198,6 +198,13 @@ async function waitlistSignup(request: Request, env: Env): Promise<Response> {
 
 // ------------------------------------------------------------------ chat
 
+/** The OpenAI usage block, including the cache-hit detail providers report. */
+interface Usage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+}
+
 interface ChatBody {
   model?: string;
   messages?: { role: string; content: unknown }[];
@@ -339,13 +346,14 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     const logId = res.headers.get("cf-aig-log-id");
     if (logId) outHeaders["cf-aig-log-id"] = logId;
 
-    const settle = (inTok: number | undefined, outTok: number | undefined): Promise<void> =>
+    const settle = (inTok: number | undefined, outTok: number | undefined, cachedTok?: number): Promise<void> =>
       tracker.settle({
         route,
         ok: true,
         status: res.status,
         inTok,
         outTok,
+        cachedTok,
         latencyMs: Date.now() - started,
         cooldownMs: learned,
         cooldownScope: "route",
@@ -357,7 +365,11 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
       const tap = tapSse(res.body);
       ctx.waitUntil(
         tap.done.then(({ usage, chars }) =>
-          settle(usage?.prompt_tokens ?? estIn, usage?.completion_tokens ?? Math.ceil(chars / 4)),
+          settle(
+            usage?.prompt_tokens ?? estIn,
+            usage?.completion_tokens ?? Math.ceil(chars / 4),
+            usage?.prompt_tokens_details?.cached_tokens,
+          ),
         ),
       );
       return new Response(tap.stream, {
@@ -366,7 +378,7 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     }
 
     const text = await res.text();
-    let usage: { prompt_tokens?: number; completion_tokens?: number } | undefined;
+    let usage: Usage | undefined;
     let outChars = text.length;
     try {
       const parsed = JSON.parse(text) as { usage?: typeof usage; choices?: { message?: unknown }[] };
@@ -375,7 +387,13 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     } catch {
       // Non-JSON success body: estimate from size.
     }
-    ctx.waitUntil(settle(usage?.prompt_tokens ?? estIn, usage?.completion_tokens ?? Math.ceil(outChars / 4)));
+    ctx.waitUntil(
+      settle(
+        usage?.prompt_tokens ?? estIn,
+        usage?.completion_tokens ?? Math.ceil(outChars / 4),
+        usage?.prompt_tokens_details?.cached_tokens,
+      ),
+    );
     return new Response(text, { status: res.status, headers: { ...outHeaders, "content-type": contentType || "application/json" } });
   }
 
@@ -461,11 +479,11 @@ function parseDuration(value: string | null): number | undefined {
 /** Passes an SSE stream through untouched while capturing the final usage block. */
 function tapSse(body: ReadableStream<Uint8Array>): {
   stream: ReadableStream<Uint8Array>;
-  done: Promise<{ usage?: { prompt_tokens?: number; completion_tokens?: number }; chars: number }>;
+  done: Promise<{ usage?: Usage; chars: number }>;
 } {
   const decoder = new TextDecoder();
   let buffer = "";
-  let usage: { prompt_tokens?: number; completion_tokens?: number } | undefined;
+  let usage: Usage | undefined;
   let chars = 0;
 
   const scan = (line: string) => {

@@ -45,6 +45,13 @@ export type GatewayRoute =
 
 export interface ProviderDef {
   id: string;
+  /**
+   * Set only when the provider has been shown to exclude prompt-cache hits from its own rate
+   * limits. Then `settle()` bills `prompt_tokens - cached_tokens` against our token counters
+   * instead of the full prompt. Off by default: most providers (OpenAI among them) still count a
+   * cache hit toward TPM, and undercounting would push us past their real limit into 429s.
+   */
+  cachedTokensFree?: boolean;
   name: string;
   /** Secret holding the API key(s). Comma/newline-separate several keys. */
   keyEnv: string;
