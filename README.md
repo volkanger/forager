@@ -122,7 +122,7 @@ Any OpenAI SDK works if you set `base_url` to `…/v1` and `api_key` to your For
 |---|---|
 | `auto` | Highest-priority model that has quota left, with automatic fallback |
 | `auto:<tag>` | Same, limited to a tag: `fast`, `smart`, `coding`, `tools`, `vision`, `reasoning`, `structured` |
-| `auto:<profile>` | A fallback chain you define in order (`auto:coding` comes built in) |
+| `auto:<profile>` | A fallback chain you define in order (`auto:coding` and `auto:oss120` come built in) |
 | `groq/openai/gpt-oss-120b` | Only that provider and model, rotating across its keys |
 | `gpt-oss-120b` | Every provider that serves that model id |
 

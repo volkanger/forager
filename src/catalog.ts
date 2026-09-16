@@ -108,6 +108,18 @@ export const DEFAULT_CATALOG: Catalog = {
   // Workers Free = 100k requests/day, DO Free = 100k requests/day.
   globalLimits: [{ window: "day", requests: 30000 }],
   profiles: {
+    // One model, every provider that serves it, so a client can pool separate free quotas.
+    // Order is deliberate: Groq is by far the fastest but its 8k TPM (7.2k after the safety
+    // margin) fits only small prompts — an agent turn is ~8.5k, so it self-skips at the quota
+    // check for no HTTP cost. Ollama has no per-minute token ceiling and does the real work.
+    // SambaNova stays listed for when a key arrives; Workers AI is last because its whole free
+    // allowance is $0.11/day, about a dozen agent turns.
+    oss120: [
+      "groq/openai/gpt-oss-120b",
+      "ollama/gpt-oss:120b",
+      "sambanova/gpt-oss-120b",
+      "workers-ai/@cf/openai/gpt-oss-120b",
+    ],
     coding: [
       "groq/openai/gpt-oss-120b",
       "nvidia/moonshotai/kimi-k3",
