@@ -121,12 +121,12 @@ Any OpenAI SDK works if you set `base_url` to `…/v1` and `api_key` to your For
 | `model` | Behaviour |
 |---|---|
 | `auto` | Highest-priority model that has quota left, with automatic fallback |
-| `auto:<tag>` | Same, limited to a tag: `fast`, `smart`, `coding`, `tools`, `vision`, `reasoning` |
+| `auto:<tag>` | Same, limited to a tag: `fast`, `smart`, `coding`, `tools`, `vision`, `reasoning`, `structured` |
 | `auto:<profile>` | A fallback chain you define in order (`auto:coding` comes built in) |
 | `groq/openai/gpt-oss-120b` | Only that provider and model, rotating across its keys |
 | `gpt-oss-120b` | Every provider that serves that model id |
 
-Requests that use `tools` or image inputs only go to models tagged with those abilities, and only when the prompt fits the model's context window. Streaming is supported: the router asks the provider for usage data and reads it from the stream. Fallback to another model only happens before the first byte is sent.
+Requests that use `tools` or image inputs only go to models tagged with those abilities, and only when the prompt fits the model's context window. A request with a strict `response_format: json_schema` is held to the same rule: most free models accept the field and then answer in prose or fenced markdown anyway, so only models tested against a real schema carry the `structured` tag and take those requests. Naming a model explicitly skips every one of these checks. Streaming is supported: the router asks the provider for usage data and reads it from the stream. Fallback to another model only happens before the first byte is sent.
 
 Forager retries for you when a provider is rate limited, times out or errors, but it can't tell that an answer was *wrong* — a reply that parses fine is a success as far as HTTP is concerned. Send `x-forager-exclude: provider/model, provider/model` to rule out models you've already judged unusable, so a retry lands somewhere new instead of on the same first choice. Agent frameworks that validate a model's output and retry are the main reason to want this.
 

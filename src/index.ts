@@ -202,6 +202,7 @@ interface ChatBody {
   model?: string;
   messages?: { role: string; content: unknown }[];
   tools?: unknown[];
+  response_format?: { type?: string };
   stream?: boolean;
   stream_options?: Record<string, unknown>;
   max_tokens?: number;
@@ -226,7 +227,13 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
 
   const tracker = env.TRACKER.get(env.TRACKER.idFromName("global"));
   const stream = body.stream === true;
-  const needs = { tools: Array.isArray(body.tools) && body.tools.length > 0, vision: hasImages(body.messages) };
+  const needs = {
+    tools: Array.isArray(body.tools) && body.tools.length > 0,
+    vision: hasImages(body.messages),
+    // Only strict schemas gate routing. Plain `json_object` is a hint most models honour loosely,
+    // and gating on it would shrink the pool for requests that tolerate a stray prose wrapper.
+    structured: body.response_format?.type === "json_schema",
+  };
   const estIn = estimateTokens(JSON.stringify(body.messages)) + (needs.tools ? estimateTokens(JSON.stringify(body.tools)) : 0);
   const estOut = Math.min(Number(body.max_tokens ?? body.max_completion_tokens ?? 1024) || 1024, 4096);
   const maxAttempts = Number(env.MAX_ATTEMPTS ?? 6);

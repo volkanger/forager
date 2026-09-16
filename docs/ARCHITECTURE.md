@@ -58,7 +58,7 @@ landing ─── /api/* ──────►           ▼                 ▼
      - `auto`: every allowed model except those with `noAuto`, highest `priority` first.
      - `auto:<tag>`: only models with that tag. `auto:<profile>`: an ordered list from `catalog.profiles`.
      - `provider/model`: exactly that model. A bare model id matches every provider that serves it.
-     - For `auto*`, models missing a needed capability or with too small a context window are dropped.
+     - For `auto*`, models missing a needed capability or with too small a context window are dropped. Needs are `tools` (the body has `tools`), `vision` (an image part) and `structured` (`response_format.type` is `json_schema`). Naming a model explicitly bypasses these checks — you asked for that model, you get it.
    - **Guards**: disabled providers/models, providers with no key, and model ids failing the provider's `modelIdPattern` (the $0 guard, e.g. OpenRouter `:free$`) never become candidates.
    - **Client exclusions**: `x-forager-exclude: provider/model, provider/model` (up to 20 entries) seeds the same exclude list the failover loop uses, so a caller that judged an answer unusable can ask for a different model. Forager only sees HTTP, so a reply that parses but fails the caller's own validation still counts as a success here; without the header a retry would get the same top-priority model back. Unknown names are ignored.
    - **For each candidate and each key slot** (round robin per provider): skip it if excluded for this request or cooling down; otherwise check every limit in three scopes: global (`g`), provider+key (`p:<provider>#<k>`), model+key (`m:<provider>/<model>#<k>`).

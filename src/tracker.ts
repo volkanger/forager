@@ -31,6 +31,8 @@ export interface ScopeRef {
 export interface Needs {
   tools: boolean;
   vision: boolean;
+  /** The request asked for a strict `json_schema` response format. */
+  structured: boolean;
 }
 
 export interface AcquireInput {
@@ -1049,10 +1051,16 @@ export class Tracker extends DurableObject<Env> {
         ({ m }) =>
           (!input.needs.tools || m.tags?.includes("tools")) &&
           (!input.needs.vision || m.tags?.includes("vision")) &&
+          // `structured` is opt-in per model on purpose: most free models accept a json_schema
+          // request and then answer in prose or fenced markdown anyway. A silently wrong shape is
+          // worse than no answer, so only models tested against a strict schema qualify.
+          (!input.needs.structured || m.tags?.includes("structured")) &&
           (!m.context || m.context >= est),
       );
       if (fitting.length === 0) {
-        const need = [input.needs.tools && "tools", input.needs.vision && "vision"].filter(Boolean).join(" + ");
+        const need = [input.needs.tools && "tools", input.needs.vision && "vision", input.needs.structured && "structured"]
+          .filter(Boolean)
+          .join(" + ");
         return {
           error: candidates.length
             ? `No configured model matching "${want}" supports this request${need ? ` (needs ${need})` : ""} or fits its size.`

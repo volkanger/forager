@@ -94,6 +94,13 @@ const groqLimits = (rpd: number, tpm: number, tpd?: number): Limit[] => [
   { window: "day", requests: rpd, ...(tpd ? { tokens: tpd } : {}) },
 ];
 
+// Tag notes
+// - "structured": tested 2026-09-16 with a strict `json_schema` response_format asking for
+//   {"city": string}. Only models that returned exactly that shape carry the tag. 20 of the 31
+//   reachable tools models accepted the request and answered in prose or fenced markdown instead,
+//   which is why the tag is opt-in rather than a deny list. Groq and Gemini were in a daily
+//   cooldown that day and are untested, so they are currently skipped for strict-schema requests —
+//   retest and tag them.
 export const DEFAULT_CATALOG: Catalog = {
   version: "2026-09-15",
   safetyMargin: 0.9,
@@ -246,21 +253,21 @@ export const DEFAULT_CATALOG: Catalog = {
       models: [
         {
           id: "codestral-latest",
-          tags: ["coding", "tools"],
+          tags: ["coding", "tools", "structured"],
           priority: 68,
           price: { in: 0.3, out: 0.9 },
           limits: [{ window: "minute", requests: 120, tokens: 625_000 }],
         },
         {
           id: "ministral-14b-latest",
-          tags: ["tools"],
+          tags: ["tools", "structured"],
           priority: 56,
           price: { in: 0.2, out: 0.2 },
           limits: [{ window: "minute", requests: 30, tokens: 937_500 }],
         },
         {
           id: "ministral-8b-latest",
-          tags: ["fast", "tools"],
+          tags: ["fast", "tools", "structured"],
           priority: 50,
           price: { in: 0.15, out: 0.15 },
           limits: [{ window: "minute", requests: 180, tokens: 625_000 }],
@@ -287,7 +294,7 @@ export const DEFAULT_CATALOG: Catalog = {
         { window: "day", requests: 50 },
       ],
       models: [
-        { id: "nvidia/nemotron-3-ultra-550b-a55b:free", tags: ["smart", "tools"], priority: 78, context: 1_000_000 },
+        { id: "nvidia/nemotron-3-ultra-550b-a55b:free", tags: ["smart", "tools", "structured"], priority: 78, context: 1_000_000 },
         { id: "nvidia/nemotron-3-super-120b-a12b:free", tags: ["smart", "tools"], priority: 64, context: 262_144 },
         { id: "google/gemma-4-31b-it:free", tags: ["tools"], priority: 52, context: 262_144 },
       ],
@@ -347,8 +354,8 @@ export const DEFAULT_CATALOG: Catalog = {
       notes: "No key. Kilo allows 200 req/hour per IP; Workers share Cloudflare egress IPs, so real capacity may be lower. Free prompts are logged for training.",
       limits: [{ window: "hour", requests: 200 }],
       models: [
-        { id: "nvidia/nemotron-3-ultra-550b-a55b:free", tags: ["smart", "tools"], priority: 58, context: 1_000_000 },
-        { id: "nvidia/nemotron-3-super-120b-a12b:free", tags: ["tools"], priority: 50, context: 262_144 },
+        { id: "nvidia/nemotron-3-ultra-550b-a55b:free", tags: ["smart", "tools", "structured"], priority: 58, context: 1_000_000 },
+        { id: "nvidia/nemotron-3-super-120b-a12b:free", tags: ["tools", "structured"], priority: 50, context: 262_144 },
         { id: "cohere/north-mini-code:free", tags: ["tools", "coding"], priority: 45, context: 256_000 },
         { id: "poolside/laguna-s-2.1:free", tags: ["tools"], priority: 40, context: 262_144 },
         { id: "stepfun/step-3.7-flash:free", tags: ["fast"], priority: 36, context: 262_144 },
@@ -372,7 +379,7 @@ export const DEFAULT_CATALOG: Catalog = {
         // Tested 2026-09-14: only these are free. deepseek-v4-pro, kimi-k3, glm-5.3 and glm-5.3-flash
         // return 402 "Insufficient balance".
         { id: "minimax-m2.7", tags: ["tools"], priority: 47 },
-        { id: "codestral-latest", tags: ["coding", "tools"], priority: 43, context: 32_000 },
+        { id: "codestral-latest", tags: ["coding", "tools", "structured"], priority: 43, context: 32_000 },
       ],
     },
     {
@@ -522,7 +529,7 @@ export const DEFAULT_CATALOG: Catalog = {
         { window: "minute", requests: 20 },
         { window: "month", requests: 1000 },
       ],
-      models: [{ id: "command-a-03-2025", tags: ["tools"], priority: 50, context: 256_000 }],
+      models: [{ id: "command-a-03-2025", tags: ["tools", "structured"], priority: 50, context: 256_000 }],
     },
     {
       id: "workers-ai",
@@ -544,7 +551,7 @@ export const DEFAULT_CATALOG: Catalog = {
         { id: "@cf/google/gemma-4-26b-a4b-it", tags: ["fast", "tools", "vision"], priority: 26, price: { in: 0.1, out: 0.3 } },
         { id: "@cf/qwen/qwen3-30b-a3b-fp8", tags: ["fast", "tools"], priority: 24, price: { in: 0.051, out: 0.335 } },
         { id: "@cf/meta/llama-3.1-8b-instruct-fp8-fast", tags: ["fast"], priority: 22, price: { in: 0.045, out: 0.384 } },
-        { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", tags: ["tools"], priority: 20, price: { in: 0.293, out: 2.253 } },
+        { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", tags: ["tools", "structured"], priority: 20, price: { in: 0.293, out: 2.253 } },
       ],
     },
   ],
