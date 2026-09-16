@@ -111,6 +111,12 @@ const groqLimits = (rpd: number, tpm: number, tpd?: number): Limit[] => [
 //   which is why the tag is opt-in rather than a deny list. Groq and Gemini were in a daily
 //   cooldown that day and are untested, so they are currently skipped for strict-schema requests —
 //   retest and tag them.
+//   Vision models were probed on 2026-09-16 with an image and a nested strict schema (an array of
+//   objects plus an enum), because a strict schema combined with an image had no candidates at all.
+//   Only Workers AI's gemma-4-26b returned the exact shape. zhipu/glm-4.6v-flash answered in prose;
+//   OpenRouter's ling-3.0-flash-vl and nex-n2.5-mini reject structured output with a 400, and
+//   nex-n2.5-pro and dots-3-note-preview returned empty content. Gemini and four OpenRouter vision
+//   models were in cooldown and are untested.
 export const DEFAULT_CATALOG: Catalog = {
   version: "2026-09-15",
   safetyMargin: 0.9,
@@ -570,7 +576,7 @@ export const DEFAULT_CATALOG: Catalog = {
       models: [
         { id: "@cf/openai/gpt-oss-120b", tags: ["smart", "tools", "reasoning"], priority: 30, context: 131_072, price: { in: 0.35, out: 0.75 } },
         { id: "@cf/zai-org/glm-4.7-flash", tags: ["fast", "tools", "coding"], priority: 28, price: { in: 0.06, out: 0.4 } },
-        { id: "@cf/google/gemma-4-26b-a4b-it", tags: ["fast", "tools", "vision"], priority: 26, price: { in: 0.1, out: 0.3 } },
+        { id: "@cf/google/gemma-4-26b-a4b-it", tags: ["fast", "tools", "vision", "structured"], priority: 26, price: { in: 0.1, out: 0.3 } },
         { id: "@cf/qwen/qwen3-30b-a3b-fp8", tags: ["fast", "tools"], priority: 24, price: { in: 0.051, out: 0.335 } },
         { id: "@cf/meta/llama-3.1-8b-instruct-fp8-fast", tags: ["fast"], priority: 22, price: { in: 0.045, out: 0.384 } },
         { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", tags: ["tools", "structured"], priority: 20, price: { in: 0.293, out: 2.253 } },

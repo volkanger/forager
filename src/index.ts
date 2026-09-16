@@ -430,8 +430,9 @@ function failurePolicy(status: number, headers: Headers, body: string): { cooldo
     const long = /per day|daily|per month|monthly|quota|FreeUsageLimit/i.test(body) ? 3_600_000 : 60_000;
     return { cooldownMs: Math.max(retry ?? long, 5_000), scope: "route", skipModel: false };
   }
-  // A model outside the plan (Ollama "requires a subscription", Mistral "tier_not_allowed") only parks that model.
-  if (status === 403 && /subscription|tier|not available|not allowed|upgrade|plan/i.test(body)) {
+  // A model outside the plan (Ollama "requires a subscription", Mistral "tier_not_allowed", OpenRouter
+  // "only available on agentic harnesses") only parks that model, not every model on the key.
+  if (status === 403 && /subscription|tier|not available|only available|not allowed|upgrade|plan/i.test(body)) {
     return { cooldownMs: 86_400_000, scope: "model", skipModel: true };
   }
   if (status === 401 || status === 403) return { cooldownMs: 3_600_000, scope: "key", skipModel: false };
