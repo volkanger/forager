@@ -50,6 +50,9 @@ export interface ProviderDef {
    * limits. Then `settle()` bills `prompt_tokens - cached_tokens` against our token counters
    * instead of the full prompt. Off by default: most providers (OpenAI among them) still count a
    * cache hit toward TPM, and undercounting would push us past their real limit into 429s.
+   *
+   * The `CACHED_TOKENS_FREE` var (comma-separated provider ids) turns it on for one deploy
+   * without committing the claim to the catalog, which is how an unproven provider gets tried.
    */
   cachedTokensFree?: boolean;
   name: string;
@@ -320,11 +323,6 @@ export const DEFAULT_CATALOG: Catalog = {
     },
     {
       id: "zhipu",
-      // Trial 2026-09-16: Zhipu reports near-total cache hits on a repeated prompt (2510 of 2511),
-      // and its 900k tokens/day is our largest budget. Betting that its own limits exclude those
-      // hits. If that is wrong we will see 429s well before our counters reach the cap — revert
-      // this line if so.
-      cachedTokensFree: true,
       name: "Zhipu AI (GLM flash)",
       keyEnv: "ZHIPU_API_KEY",
       signupUrl: "https://open.bigmodel.cn/usercenter/apikeys",

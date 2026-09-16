@@ -325,7 +325,7 @@ export class Tracker extends DurableObject<Env> {
             headers: p.headers,
             streamUsage: !!p.streamUsage,
             timeoutMs: p.timeoutMs,
-            cachedTokensFree: p.cachedTokensFree,
+            cachedTokensFree: p.cachedTokensFree || this.cachedFreeProviders().has(p.id),
             price: m.price,
             estIn: input.estIn,
             estOut: input.estOut,
@@ -1206,6 +1206,16 @@ export class Tracker extends DurableObject<Env> {
       );
     }
     this.pendingStats.clear();
+  }
+
+  /** Provider ids from the CACHED_TOKENS_FREE var, for trying the discount without a catalog change. */
+  private cachedFreeProviders(): Set<string> {
+    return new Set(
+      (this.env.CACHED_TOKENS_FREE ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
   }
 
   private kvGet(k: string): string | null {

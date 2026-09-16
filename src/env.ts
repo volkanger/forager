@@ -16,6 +16,8 @@ export interface Env {
   AI_GATEWAY_ID?: string;
   CF_AIG_TOKEN?: string;
   GATEWAY_CACHE_TTL?: string;
+  /** Provider ids whose prompt-cache hits are not billed against our token counters. */
+  CACHED_TOKENS_FREE?: string;
 
   /** "owner/repo" whose GitHub stars/traffic are tracked for the interest dashboard (optional). */
   GITHUB_REPO?: string;
