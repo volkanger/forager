@@ -93,6 +93,18 @@ interface StatDelta {
   latencyMs: number;
 }
 
+/** Most recent chats kept per API key when chat history is on. */
+const CHAT_LIMIT = 200;
+
+/** One saved conversation from /chat. Messages are stored as the page sends them. */
+export interface StoredChat {
+  id: string;
+  title: string;
+  model: string;
+  updated: number;
+  messages: { role: string; content: string; meta?: unknown; error?: boolean }[];
+}
+
 interface RouterKey {
   id: string;
   label: string;
@@ -163,6 +175,12 @@ export class Tracker extends DurableObject<Env> {
         day TEXT PRIMARY KEY, stars INTEGER, watchers INTEGER, forks INTEGER,
         views INTEGER, view_uniques INTEGER, clones INTEGER, clone_uniques INTEGER, poll_votes INTEGER) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS waitlist (email TEXT PRIMARY KEY, created_at INTEGER NOT NULL, source TEXT NOT NULL) WITHOUT ROWID`);
+      // Chat history, only written when CHAT_HISTORY is set on the deploy. `owner` is the
+      // SHA-256 of the API key that saved the chat, so one key never sees another's chats.
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS chats (
+        owner TEXT NOT NULL, id TEXT NOT NULL, updated_at INTEGER NOT NULL,
+        title TEXT NOT NULL, model TEXT NOT NULL, data TEXT NOT NULL,
+        PRIMARY KEY (owner, id)) WITHOUT ROWID`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS provider_keys (
         id TEXT PRIMARY KEY, provider TEXT NOT NULL, label TEXT NOT NULL, last4 TEXT NOT NULL,
         ciphertext TEXT NOT NULL, iv TEXT NOT NULL, created_at INTEGER NOT NULL) WITHOUT ROWID`);
@@ -640,6 +658,65 @@ export class Tracker extends DurableObject<Env> {
     return { removed: before > 0 };
   }
 
+  // ---------------------------------------------------------------- chat history
+
+  /**
+   * Chat history for the /chat page. Off unless CHAT_HISTORY is set on the deploy, so a plain
+   * Deploy-button copy never stores anyone's conversations. Each owner keeps the 200 most recent
+   * chats; older ones and anything past 90 days go in the daily maintenance run.
+   */
+  listChats(owner: string): { chats: StoredChat[] } {
+    const rows = this.sql
+      .exec<{ id: string; updated_at: number; data: string }>(
+        `SELECT id, updated_at, data FROM chats WHERE owner = ? ORDER BY updated_at DESC LIMIT ?`,
+        owner,
+        CHAT_LIMIT,
+      )
+      .toArray();
+    return { chats: rows.map((r) => ({ ...(JSON.parse(r.data) as StoredChat), id: r.id, updated: r.updated_at })) };
+  }
+
+  saveChats(owner: string, chats: StoredChat[]): { saved: number } {
+    for (const chat of chats) {
+      this.sql.exec(
+        `INSERT INTO chats (owner, id, updated_at, title, model, data) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(owner, id) DO UPDATE SET updated_at = excluded.updated_at, title = excluded.title,
+           model = excluded.model, data = excluded.data
+         WHERE excluded.updated_at >= chats.updated_at`,
+        owner,
+        chat.id,
+        chat.updated,
+        chat.title,
+        chat.model,
+        JSON.stringify(chat),
+      );
+    }
+    this.pruneChats(owner);
+    return { saved: chats.length };
+  }
+
+  deleteChat(owner: string, id: string): { deleted: boolean } {
+    const before = this.sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM chats WHERE owner = ? AND id = ?`, owner, id).one().n;
+    this.sql.exec(`DELETE FROM chats WHERE owner = ? AND id = ?`, owner, id);
+    return { deleted: before > 0 };
+  }
+
+  deleteChats(owner: string): { deleted: number } {
+    const before = this.sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM chats WHERE owner = ?`, owner).one().n;
+    this.sql.exec(`DELETE FROM chats WHERE owner = ?`, owner);
+    return { deleted: before };
+  }
+
+  private pruneChats(owner: string): void {
+    this.sql.exec(
+      `DELETE FROM chats WHERE owner = ? AND id NOT IN (
+         SELECT id FROM chats WHERE owner = ? ORDER BY updated_at DESC LIMIT ?)`,
+      owner,
+      owner,
+      CHAT_LIMIT,
+    );
+  }
+
   // ---------------------------------------------------------------- interest tracking
 
   /** Counts an anonymous landing-page event (e.g. a Deploy button click). At most 10 per client per day. */
@@ -901,6 +978,7 @@ export class Tracker extends DurableObject<Env> {
     this.sql.exec(`DELETE FROM stats WHERE day < ?`, cutoff);
     this.sql.exec(`DELETE FROM cooldowns WHERE until < ?`, Date.now());
     this.sql.exec(`DELETE FROM strikes WHERE at < ?`, Date.now() - 3_600_000);
+    this.sql.exec(`DELETE FROM chats WHERE updated_at < ?`, Date.now() - 90 * 86_400_000);
     await this.syncOpenRouter().catch((e) => console.error("openrouter sync failed", e));
     await this.syncGitHub().catch((e) => console.error("github sync failed", e));
   }

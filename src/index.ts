@@ -2,7 +2,7 @@ import { splitKeys } from "./catalog";
 import type { Env } from "./env";
 import { cloudflareAccount, type CloudflareAccount } from "./account";
 import { sha256Hex } from "./keystore";
-import type { Route, SettleInput } from "./tracker";
+import type { Route, SettleInput, StoredChat } from "./tracker";
 
 export { Tracker } from "./tracker";
 
@@ -12,6 +12,12 @@ const CORS = {
   "access-control-allow-headers": "authorization, content-type, x-api-key",
   "access-control-expose-headers": "x-routed-via, x-forager-attempts, x-forager-gateway, cf-aig-log-id, retry-after",
 };
+
+// Longest `retry-after` we send a client. Cooldowns and cycle resets can be a day or a month away,
+// and OpenAI-compatible SDKs sleep for the advertised time with no upper bound, so the real figure
+// would hang an agent run rather than fail it. The exact wait stays in the body as
+// `error.retry_after_seconds`, and the dashboard reads cooldowns from the tracker directly.
+const MAX_RETRY_AFTER = 60;
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
@@ -56,6 +62,8 @@ export default {
         const models = await tracker.listModels();
         return json({ object: "list", data: models.map((m) => ({ id: m.id, object: "model", created: 0, owned_by: m.owned_by, tags: m.tags })) });
       }
+      if (path === "/api/chats" || path.startsWith("/api/chats/")) return await chatHistory(request, env, tracker, path);
+
       if (path === "/admin/usage" && request.method === "GET") return json(await tracker.usage());
       if (path === "/admin/catalog") {
         if (request.method === "GET") return json(await tracker.getCatalog());
@@ -239,9 +247,15 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
         return new Response(lastUpstream.body, { status: lastUpstream.status, headers: { ...CORS, "content-type": "application/json" } });
       }
       const headers: Record<string, string> = {};
-      if (acquired.retryAfter) headers["retry-after"] = String(acquired.retryAfter);
+      // OpenAI-compatible clients obey `retry-after` literally: the OpenAI SDKs sleep for exactly
+      // that long with no ceiling, and their sleep isn't abortable, so a caller that hits a day or
+      // month reset (or a provider cooldown built from an upstream "come back tomorrow" 429) parks
+      // for hours instead of failing. Cap the header and report the real wait in the body.
+      if (acquired.retryAfter) headers["retry-after"] = String(Math.min(acquired.retryAfter, MAX_RETRY_AFTER));
       const status = attempts.length ? 502 : acquired.status;
-      return apiError(status, acquired.error, status === 502 ? "upstream_error" : undefined, { attempts, blocked: acquired.blocked }, headers);
+      const extra: Record<string, unknown> = { attempts, blocked: acquired.blocked };
+      if (acquired.retryAfter) extra.retry_after_seconds = acquired.retryAfter;
+      return apiError(status, acquired.error, status === 502 ? "upstream_error" : undefined, extra, headers);
     }
 
     const route = acquired.route;
@@ -505,9 +519,68 @@ const routerKeyCache = new Map<string, { ok: boolean; until: number }>();
  * Accepts keys from the PROXY_API_KEY secret (or ADMIN_API_KEY for /admin) and API keys created in the
  * dashboard. Dashboard keys are stored as SHA-256 hashes; revoking one takes effect within a minute.
  */
-async function authorized(request: Request, env: Env, tracker: DurableObjectStub<import("./tracker").Tracker>, admin: boolean): Promise<boolean> {
+/**
+ * Chat history for /chat, scoped to the API key that saved it. Disabled unless CHAT_HISTORY is set,
+ * so a plain deploy (and anyone else's copy of Forager) keeps chats in the browser only.
+ */
+async function chatHistory(
+  request: Request,
+  env: Env,
+  tracker: DurableObjectStub<import("./tracker").Tracker>,
+  path: string,
+): Promise<Response> {
+  if (!env.CHAT_HISTORY) return apiError(404, "Chat history isn't enabled on this Forager.", "not_found");
+
+  const owner = await sha256Hex(bearerToken(request));
+  const id = path.startsWith("/api/chats/") ? decodeURIComponent(path.slice("/api/chats/".length)) : "";
+
+  if (id) {
+    if (request.method !== "DELETE") return apiError(405, "Method not allowed.");
+    return json(await tracker.deleteChat(owner, id));
+  }
+  if (request.method === "GET") return json(await tracker.listChats(owner));
+  if (request.method === "DELETE") return json(await tracker.deleteChats(owner));
+  if (request.method === "PUT") {
+    const body = (await request.json().catch(() => null)) as { chats?: unknown } | null;
+    const chats = cleanChats(body?.chats);
+    if (!chats) return apiError(400, "Send { chats: [...] } with at most 20 chats of 200 messages each.");
+    return json(await tracker.saveChats(owner, chats));
+  }
+  return apiError(405, "Method not allowed.");
+}
+
+/** Keeps stored chats to a sane shape and size; anything unexpected makes the whole request fail. */
+function cleanChats(input: unknown): StoredChat[] | null {
+  if (!Array.isArray(input) || input.length > 20) return null;
+  const chats: StoredChat[] = [];
+  for (const raw of input) {
+    const c = raw as Partial<StoredChat>;
+    if (!c || typeof c.id !== "string" || !c.id || c.id.length > 64) return null;
+    if (!Array.isArray(c.messages) || c.messages.length > 200) return null;
+    const messages = c.messages.map((m) => ({
+      role: String((m as { role?: unknown }).role ?? "user").slice(0, 20),
+      content: String((m as { content?: unknown }).content ?? "").slice(0, 100_000),
+      meta: (m as { meta?: unknown }).meta,
+      error: (m as { error?: unknown }).error === true ? true : undefined,
+    }));
+    chats.push({
+      id: c.id,
+      title: String(c.title ?? "New chat").slice(0, 200),
+      model: String(c.model ?? "").slice(0, 120),
+      updated: Number.isFinite(c.updated) ? Number(c.updated) : Date.now(),
+      messages,
+    });
+  }
+  return chats;
+}
+
+function bearerToken(request: Request): string {
   const header = request.headers.get("authorization");
-  const token = (header?.replace(/^Bearer\s+/i, "") ?? request.headers.get("x-api-key") ?? "").trim();
+  return (header?.replace(/^Bearer\s+/i, "") ?? request.headers.get("x-api-key") ?? "").trim();
+}
+
+async function authorized(request: Request, env: Env, tracker: DurableObjectStub<import("./tracker").Tracker>, admin: boolean): Promise<boolean> {
+  const token = bearerToken(request);
   if (!token) return false;
 
   const secretKeys = admin ? (env.ADMIN_API_KEY ?? env.PROXY_API_KEY) : env.PROXY_API_KEY;

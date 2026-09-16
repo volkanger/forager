@@ -24,6 +24,13 @@ export interface Env {
   /** Discussion number of the GitHub poll to track (optional; needs GITHUB_TOKEN). */
   GITHUB_POLL?: string;
 
+  /**
+   * Set to "1" to let /chat save conversations in the Durable Object, scoped to the API key that
+   * wrote them. Absent (the default, including every Deploy-button copy) means chats never leave
+   * the browser.
+   */
+  CHAT_HISTORY?: string;
+
   MAX_ATTEMPTS?: string;
   UPSTREAM_TIMEOUT_MS?: string;
   UPSTREAM_STREAM_TIMEOUT_MS?: string;

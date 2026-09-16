@@ -31,6 +31,9 @@
     //   "UPSTREAM_TIMEOUT_MS": "30000"  – wait for a provider to start answering (non-streaming)
     //   "UPSTREAM_STREAM_TIMEOUT_MS": "15000" – same, for streaming requests
     //   "GATEWAY_CACHE_TTL": "3600"     – AI Gateway caches identical prompts (saves quota)
+    //   "CHAT_HISTORY": "1"             – /chat saves conversations in the Durable Object, scoped to
+    //                                     the API key that wrote them. Left out on purpose: without it
+    //                                     chats never leave the browser, so your deploy stores nobody's.
   }
 
   // No secrets are required: open /dashboard after deploying to create your API key.

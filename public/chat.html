@@ -145,7 +145,7 @@
     <button class="new" id="new">+ New chat</button>
     <div class="chats" id="chats"></div>
     <div class="side-foot">
-      Chats are saved in this browser only.<br>
+      <span id="storage-note">Chats are saved in this browser only.</span><br>
       <a href="/dashboard">Dashboard</a> · <a href="#" id="signout">Sign out</a>
     </div>
   </aside>
@@ -189,6 +189,10 @@
   var chats = store.get("forager-chats", []);
   var current = null;
   var controller = null;
+  // Server-side history is off unless the deploy sets CHAT_HISTORY; /api/chats answers 404 then and
+  // everything below stays a no-op. `pending` holds ids edited while offline, so they push later.
+  // `on` starts from what the last visit saw, so edits made offline still queue for the next push.
+  var sync = { on: store.get("forager-chat-sync", false), pending: store.get("forager-chat-pending", []), timer: null };
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
 
@@ -249,7 +253,74 @@
     if (!current || !current.messages.length) return;
     current.updated = Date.now();
     chats = [current].concat(chats.filter(function (c) { return c.id !== current.id; }));
-    save(); renderList();
+    save(); renderList(); markPending(current.id);
+  }
+
+  // ---------- sync (only when this Forager stores chat history) ----------
+  function savePending() { store.set("forager-chat-pending", sync.pending.slice(-200)); }
+  function setSync(on) {
+    sync.on = on;
+    store.set("forager-chat-sync", on);
+    $("storage-note").textContent = on ? "Chats are saved on your Forager." : "Chats are saved in this browser only.";
+    if (!on) { sync.pending = []; savePending(); }
+  }
+  function markPending(id) {
+    if (!sync.on) return;
+    if (sync.pending.indexOf(id) < 0) sync.pending.push(id);
+    savePending();
+    clearTimeout(sync.timer);
+    sync.timer = setTimeout(syncPush, 1200);
+  }
+  function syncPull() {
+    return api("/api/chats").then(function (r) {
+      if (r.status === 404) { setSync(false); return; }
+      if (!r.ok) throw new Error("sync");
+      return r.json().then(function (b) {
+        setSync(true);
+        var remote = b.chats || [];
+        var byId = {};
+        chats.forEach(function (c) { byId[c.id] = c; });
+        var seen = {};
+        remote.forEach(function (rc) {
+          seen[rc.id] = rc.updated || 0;
+          var local = byId[rc.id];
+          if (!local || (rc.updated || 0) > (local.updated || 0)) byId[rc.id] = rc;
+        });
+        chats = Object.keys(byId).map(function (k) { return byId[k]; })
+          .sort(function (a, b2) { return (b2.updated || 0) - (a.updated || 0); });
+        save();
+        // Anything the server is missing or has an older copy of goes up next.
+        chats.forEach(function (c) {
+          if (!(c.id in seen) || (c.updated || 0) > seen[c.id]) { if (sync.pending.indexOf(c.id) < 0) sync.pending.push(c.id); }
+        });
+        savePending();
+        if (current && !current.messages.length) { current = null; newChat(); } else renderList();
+        return syncPush();
+      });
+    }).catch(function () {});
+  }
+  function syncPush() {
+    if (!sync.on || !sync.pending.length) return Promise.resolve();
+    var ids = sync.pending.slice(0, 20);
+    var batch = chats.filter(function (c) { return ids.indexOf(c.id) >= 0 && c.messages.length; });
+    if (!batch.length) {
+      sync.pending = sync.pending.filter(function (id) { return ids.indexOf(id) < 0; });
+      savePending();
+      return Promise.resolve();
+    }
+    return api("/api/chats", { method: "PUT", body: JSON.stringify({ chats: batch }) }).then(function (r) {
+      if (!r.ok) return;
+      var sent = batch.map(function (c) { return c.id; });
+      sync.pending = sync.pending.filter(function (id) { return sent.indexOf(id) < 0; });
+      savePending();
+      if (sync.pending.length) return syncPush();
+    }).catch(function () {});
+  }
+  function syncDelete(id) {
+    sync.pending = sync.pending.filter(function (p) { return p !== id; });
+    savePending();
+    if (!sync.on) return;
+    api("/api/chats/" + encodeURIComponent(id), { method: "DELETE" }).catch(function () {});
   }
 
   // ---------- rendering ----------
@@ -465,13 +536,14 @@
     loadModels().then(function () {
       try { localStorage.setItem("forager-key", key); } catch (e) {}
       $("overlay").hidden = true; $("key").value = "";
-      loadUsage(); $("input").focus();
+      loadUsage(); syncPull(); $("input").focus();
     }).catch(function () { key = ""; $("signin-err").textContent = "That key didn't work. Check it and try again."; });
   });
   $("signout").addEventListener("click", function (ev) {
     ev.preventDefault();
     try { localStorage.removeItem("forager-key"); } catch (e) {}
-    key = ""; showSignin();
+    key = ""; setSync(false);
+    showSignin();
   });
 
   // ---------- events ----------
@@ -495,7 +567,7 @@
     var del = ev.target.closest("[data-del]");
     if (del) {
       chats = chats.filter(function (c) { return c.id !== del.getAttribute("data-del"); });
-      save();
+      save(); syncDelete(del.getAttribute("data-del"));
       if (current && current.id === del.getAttribute("data-del")) newChat(); else renderList();
       return;
     }
@@ -520,12 +592,13 @@
   });
 
   // ---------- start ----------
+  if (sync.on) $("storage-note").textContent = "Chats are saved on your Forager.";
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });
   }
   newChat();
   if (!key) showSignin();
-  else loadModels().then(loadUsage).catch(function () { showSignin("Sign in with your Forager API key."); });
+  else loadModels().then(loadUsage).then(syncPull).catch(function () { showSignin("Sign in with your Forager API key."); });
 })();
 </script>
 </body>

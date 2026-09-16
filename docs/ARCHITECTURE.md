@@ -39,7 +39,7 @@ landing ─── /api/* ──────►           ▼                 ▼
 | `src/account.ts` | Discovers the Cloudflare account ID through the Workers AI binding (so config has nothing account-specific) |
 | `src/env.ts` | The `Env` type: bindings, vars, optional secrets |
 | `public/index.html` | Landing page (fora.ger.soy): Deploy button, catalog, waitlist, star count, click beacons, self-host redirect to setup |
-| `public/chat.html` | Chat UI at `/chat`: signs in with a Forager API key, streams from `/v1/chat/completions`, model picker from `/v1/models`, conversations saved only in the browser (localStorage), small escaped-first markdown renderer (code, lists, tables, links limited to http/https) |
+| `public/chat.html` | Chat UI at `/chat`: signs in with a Forager API key, streams from `/v1/chat/completions`, model picker from `/v1/models`, conversations saved only in the browser (localStorage), small escaped-first markdown renderer (code, lists, tables, links limited to http/https); installable PWA; syncs chats through `/api/chats` when the deploy sets `CHAT_HISTORY`, otherwise localStorage only |
 | `public/manifest.webmanifest`, `public/sw.js`, `public/icon-*.png` | PWA bits for `/chat`: installable manifest (`display: standalone`, `start_url: /chat`) and a service worker that caches only the chat shell and its icons. `/v1/*`, `/api/*`, `/admin/*` and `/health` are never cached, and navigations to `/` or `/dashboard` pass straight through |
 | `public/privacy.html`, `public/terms.html` | Privacy policy and terms (contact fora@ger.soy) |
 | `public/dashboard.html` | Dashboard: sidebar navigation (Chat link first), first-run setup, API keys, provider keys, quota bars, cooldowns, stats, playground, waitlist, interest; same visual system as the landing page and chat |
@@ -62,7 +62,7 @@ landing ─── /api/* ──────►           ▼                 ▼
    - **Guards**: disabled providers/models, providers with no key, and model ids failing the provider's `modelIdPattern` (the $0 guard, e.g. OpenRouter `:free$`) never become candidates.
    - **For each candidate and each key slot** (round robin per provider): skip it if excluded for this request or cooling down; otherwise check every limit in three scopes: global (`g`), provider+key (`p:<provider>#<k>`), model+key (`m:<provider>/<model>#<k>`).
    - **First fit wins**: the estimated request, tokens and USD are **reserved** in every scope, and a `Route` goes back to the Worker (including the plaintext provider key, which never leaves the Worker).
-   - **Nothing fits**: 429 with a `retry-after` based on the soonest cooldown or cycle reset, and a `blocked` summary of why.
+   - **Nothing fits**: 429 with a `blocked` summary of why. The soonest cooldown or cycle reset goes in the body as `error.retry_after_seconds`; the `retry-after` header carries the same figure capped at `MAX_RETRY_AFTER` (60 s), because OpenAI-compatible SDKs sleep for the advertised time with no ceiling and an uncapped day or month wait hangs the caller instead of failing it.
 4. **Build the upstream call** (`upstreamTarget()`):
    - **Through AI Gateway** when the provider has a `gateway` route and the account ID resolved: `compat` providers post to `…/compat/chat/completions` with `model: "<slug>/<id>"`; `path` providers use their own gateway path.
    - **Directly** (`directUrl`) otherwise.
@@ -187,6 +187,19 @@ The cron `17 3 * * *` runs `Tracker.maintenance()`:
 - Prune stats older than 90 days and expired cooldowns.
 - Sync OpenRouter's free models.
 - When `GITHUB_REPO` is set, save GitHub stars, watchers, forks, 14-day views/clones, referrers and poll votes (traffic and poll need `GITHUB_TOKEN`).
+
+## Chat history (optional, off by default)
+
+`/chat` keeps conversations in `localStorage`. When the deploy sets `CHAT_HISTORY`, the page also syncs them through `/api/chats`, which needs the same API key as the rest of the API:
+
+| Route | Does |
+|---|---|
+| `GET /api/chats` | The 200 most recent chats for this key (404 when `CHAT_HISTORY` is unset, which is how the page detects the feature) |
+| `PUT /api/chats` | Upsert up to 20 chats; a row is only replaced by a copy with a newer `updated`, so the newest device wins |
+| `DELETE /api/chats/<id>` | Remove one chat |
+| `DELETE /api/chats` | Remove every chat for this key |
+
+Rows live in the `chats` table, keyed by `(owner, id)` where `owner` is the SHA-256 of the API key — one key never sees another's chats. Daily maintenance drops anything older than 90 days. Without the var the routes 404 and nothing is stored, so a plain deploy never holds anyone's conversations.
 
 ## Cost model (Cloudflare side)
 
