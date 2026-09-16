@@ -9,7 +9,7 @@ export { Tracker } from "./tracker";
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "access-control-allow-headers": "authorization, content-type, x-api-key",
+  "access-control-allow-headers": "authorization, content-type, x-api-key, x-forager-exclude",
   "access-control-expose-headers": "x-routed-via, x-forager-attempts, x-forager-gateway, cf-aig-log-id, retry-after",
 };
 
@@ -235,7 +235,11 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
   const defaultTimeoutMs = stream ? Number(env.UPSTREAM_STREAM_TIMEOUT_MS ?? 15_000) : Number(env.UPSTREAM_TIMEOUT_MS ?? 30_000);
 
   const account = await cloudflareAccount(env);
-  const exclude: string[] = [];
+  // A client can rule out models it has already found unusable for this job, with
+  // `x-forager-exclude: provider/model, provider/model`. Forager only sees HTTP: a reply that
+  // parses fine but fails the caller's own validation still looks like a success here, so without
+  // this an agent retrying a bad answer gets the same top-priority model back and loops.
+  const exclude: string[] = clientExclusions(request);
   const attempts: Attempt[] = [];
   let lastUpstream: { status: number; body: string; headers: Headers } | null = null;
 
@@ -607,6 +611,25 @@ async function authorized(request: Request, env: Env, tracker: DurableObjectStub
 
 function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data, null, 2), { status, headers: { ...CORS, "content-type": "application/json", ...headers } });
+}
+
+/**
+ * Models the client has asked us to skip, from `x-forager-exclude`.
+ *
+ * Entries match the same `provider/model` form as the `model` field (a bare route id works too).
+ * Bounded so a malformed header can't blow up the candidate scan; unknown names are harmless
+ * because `acquire()` just never matches them.
+ */
+function clientExclusions(request: Request): string[] {
+  const header = request.headers.get("x-forager-exclude");
+  if (!header) return [];
+  const seen = new Set<string>();
+  for (const part of header.split(",")) {
+    const name = part.trim();
+    if (name && name.length <= 120) seen.add(name);
+    if (seen.size >= 20) break;
+  }
+  return [...seen];
 }
 
 function apiError(status: number, message: string, type = status === 429 ? "rate_limit_exceeded" : "invalid_request_error", extra: Record<string, unknown> = {}, headers: Record<string, string> = {}): Response {
