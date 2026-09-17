@@ -84,7 +84,7 @@ landing ─── /api/* ──────►           ▼                 ▼
 | Upstream result | Cooldown | Scope |
 |---|---|---|
 | 429 "Request too large" / "reduce your message size" (one request above a per-minute token limit, e.g. Groq's output-token limit) | none; try another model | – |
-| 429 whose body, with URLs removed, mentions depleted credits, prepay, billing, insufficient balance | 24 h | key |
+| 429 whose body, with URLs removed, mentions depleted credits, prepay, payment required, insufficient balance (not the bare word "billing": Groq's and Google's ordinary rate-limit 429s mention it) | 24 h | key |
 | 429 mentioning daily/monthly quota or `FreeUsageLimit` | 1 h (or `retry-after`) | route (this model on this key) |
 | other 429 | `retry-after`, reset header, or 60 s (min 5 s) | route |
 | 403 mentioning subscription, tier, plan, not available | 24 h | model, on every key |

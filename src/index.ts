@@ -461,11 +461,12 @@ function failurePolicy(status: number, headers: Headers, body: string): { cooldo
   // tokens per minute") fails the same way on every retry, like a 413. Try another model; the key is fine.
   if (status === 429 && /request too large|reduce your message size/i.test(body)) return { scope: "model", skipModel: true };
   // Billing/credit problems sometimes arrive as 429 (e.g. Gemini "prepayment credits are depleted").
-  // Treat them like 402: the key is tied to paid billing, so keep away from it for a day. URLs are
-  // stripped first: Groq ends every rate-limit 429 with "Upgrade to Dev Tier today at
-  // https://console.groq.com/settings/billing", which paused the whole Groq key for a day.
+  // Treat them like 402: the key is tied to paid billing, so keep away from it for a day. The bare word
+  // "billing" is not a signal: Groq ends every rate-limit 429 with a https://console.groq.com/settings/billing
+  // link and Google's ordinary quota 429 says "check your plan and billing details", and both paused
+  // a whole key for a day. URLs are stripped too, in case a link spells out one of these phrases.
   const prose = body.replace(/https?:\/\/\S+/g, "");
-  if (status === 429 && /credits? (are |is )?depleted|prepay|billing|payment required|insufficient (credits|balance|funds)/i.test(prose)) {
+  if (status === 429 && /credits? (are |is )?depleted|prepay|payment required|insufficient (credits|balance|funds)/i.test(prose)) {
     return { cooldownMs: 86_400_000, scope: "key", skipModel: false };
   }
   if (status === 429) {

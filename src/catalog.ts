@@ -195,6 +195,24 @@ export const DEFAULT_CATALOG: Catalog = {
             { window: "day", requests: 1000 },
           ],
         },
+        // Pinned Flash versions, added 2026-09-17 to see whether any is less contended than
+        // gemini-flash-latest (503 "high demand" on 12 of 12 schema attempts that day). Probed at 05:40 UTC:
+        // 3.5 answered a strict schema once (4.8 s) and then 503'd; 3.6 and 3.7 503 twice; 3.8 503 then timed
+        // out at 30 s. flash-lite answered in 0.8 s in the same minute, so Google is shedding Flash-class load
+        // on every version, not just the alias. gemini-2.5-flash was dropped: 404 "no longer available to new
+        // users". Kept callable by name only (no tags, noAuto: tag selectors like auto:vision ignore noAuto)
+        // for a quieter retest. Limits copied from flash, unmeasured.
+        ...["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"].map((id) => ({
+          id,
+          tags: [],
+          priority: 60,
+          noAuto: true,
+          context: 1_048_576,
+          limits: [
+            { window: "minute" as const, requests: 10, tokens: 250_000 },
+            { window: "day" as const, requests: 250 },
+          ],
+        })),
       ],
     },
     {
