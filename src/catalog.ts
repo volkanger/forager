@@ -575,6 +575,7 @@ export const DEFAULT_CATALOG: Catalog = {
       directUrl: "https://tokenharbor.ai/v1/chat/completions",
       modelsUrl: "https://tokenharbor.ai/v1/models",
       resetTz: "UTC",
+      timeoutMs: 120_000,
       // $0 guard: Token Harbor also sells Claude/GPT; per its quickstart only ids ending in ":free"
       // never charge the balance.
       modelIdPattern: ":free$",
@@ -582,10 +583,14 @@ export const DEFAULT_CATALOG: Catalog = {
       notes:
         "Free monthly allowance (4 windows of 7 days), size not published; no card. Blocks mainland China, Hong Kong and Macau. Free-model prompts may be kept for diagnostics and product improvement.",
       models: [
-        // Added 2026-09-16 from the pricing page ("DeepSeek V4.1 Flash", "MiMo V2.5"); exact ids are
-        // guesses until a key can list /v1/models.
-        { id: "deepseek-v4.1-flash:free", tags: ["smart", "tools", "vision", "coding"], priority: 57, context: 1_048_576 },
-        { id: "mimo-v2.5:free", tags: ["tools", "vision"], priority: 44 },
+        // Tested 2026-09-16 through the Worker. /v1/models lists exactly these three :free ids.
+        // Streaming is fast for text ("ok" in 1.4 s); the same request without streaming took 60 s,
+        // which is why timeoutMs is 120 s. Images are slow even when streaming: a 32x32 PNG took 44 s
+        // on deepseek-v4.1-flash and 76 s on mimo-v2.5 (both answered "Red", after hidden reasoning).
+        // Priorities sit below the faster providers so this is a fallback, not the first stop.
+        { id: "deepseek-v4-flash:free", tags: ["smart", "tools", "coding"], priority: 36, context: 1_048_576 },
+        { id: "deepseek-v4.1-flash:free", tags: ["smart", "tools", "vision", "reasoning", "coding"], priority: 35, context: 1_048_576 },
+        { id: "mimo-v2.5:free", tags: ["tools", "vision", "reasoning"], priority: 31 },
       ],
     },
     {
