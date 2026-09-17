@@ -619,7 +619,7 @@ export const DEFAULT_CATALOG: Catalog = {
       modelIdPattern: "-free$",
       allowUnlisted: true,
       notes:
-        "Hacker plan, no card: free models are rate-limited with unpublished 'conservative caps' (429 + Retry-After). Topping up raises the limits.",
+        "Hacker plan, no card: free models are rate-limited with unpublished 'conservative caps' (429 + Retry-After). Free models only unlock once the workspace owner links a GitHub account that isn't brand new (429 free_rate_limited until then). Topping up raises the limits.",
       models: [
         // Added 2026-09-16 from the public model list; untested. glm-5.3-flash-free lists text, image
         // and video input.
