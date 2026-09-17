@@ -480,6 +480,11 @@ export const DEFAULT_CATALOG: Catalog = {
       modelIdPattern: ":free$",
       notes: "Free pool: docs say 20 req/min and 200 req/day; a live test elsewhere saw 5 req/min, so Forager assumes 5.",
       limits: [{ window: "minute", requests: 5 }, { window: "day", requests: 200 }],
+      // Tested 2026-09-17. minimax-m2.7: "ok" in 3.1 s (0.5 s streamed), correct tool call, but a strict
+      // json_schema came back as prose that starts with its <think> block. deepseek-v4-flash: 429
+      // "model_overloaded" on three tries and one 30 s timeout, so it is unverified. muse-glimmer-30b:
+      // "ok" in 8 s, but it called the red test PNG "black" after 54 s, so it carries no vision tag.
+      // Streams put MiniMax's <think>…</think> reasoning inside `content`.
       models: [
         { id: "deepseek-v4-flash:free", tags: ["smart", "tools", "coding"], priority: 61, context: 42_000 },
         { id: "minimax-m2.7:free", tags: ["tools"], priority: 51, context: 42_000 },
@@ -654,7 +659,7 @@ export const DEFAULT_CATALOG: Catalog = {
       modelIdPattern:
         "^(gemma-4-26b-a4b-it|gemma-4-31b-it|mistral-small-3\\.2-24b-instruct|qwen3\\.6-27b|qwen3\\.6-35b-a3b|ministral-3-8b-instruct):free$",
       notes:
-        "10 free requests/day (reset 21:00 UTC); failed and cancelled requests count too. Watching ads raises it to 200, which Forager can't do. Kept for vision only (auto:vision) so text traffic can't spend it.",
+        "10 free requests/day (reset 21:00 UTC); failed and cancelled requests count too. Free models need phone verification on the Electron Hub account first (403 until then). Watching ads raises it to 200, which Forager can't do. Kept for vision only (auto:vision) so text traffic can't spend it.",
       limits: [{ window: "day", requests: 10 }],
       models: [
         { id: "qwen3.6-27b:free", tags: ["tools", "vision"], priority: 25, context: 64_000, noAuto: true },
