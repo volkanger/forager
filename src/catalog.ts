@@ -661,13 +661,18 @@ export const DEFAULT_CATALOG: Catalog = {
       notes:
         "10 free requests/day (reset 21:00 UTC); failed and cancelled requests count too. Free models need phone verification on the Electron Hub account first (403 until then). Watching ads raises it to 200, which Forager can't do. Kept for vision only (auto:vision) so text traffic can't spend it.",
       limits: [{ window: "day", requests: 10 }],
+      // Tested 2026-09-17 after phone verification, with the red test PNG. gemma-4-26b-a4b-it read it
+      // ("Red", 5.1 s). qwen3.6-27b answered HTTP 200 whose *content* was an oai-reverse-proxy error page
+      // ("The key assigned to your prompt does not support the requested model", model_not_found), so a
+      // broken model looks like a successful answer to the client. Everything not verified is disabled
+      // for that reason; test before enabling. The proxy signature also suggests pooled upstream keys.
       models: [
-        { id: "qwen3.6-27b:free", tags: ["tools", "vision"], priority: 25, context: 64_000, noAuto: true },
-        { id: "gemma-4-31b-it:free", tags: ["tools", "vision", "reasoning"], priority: 24, context: 40_000, noAuto: true },
-        { id: "mistral-small-3.2-24b-instruct:free", tags: ["tools", "vision"], priority: 23, context: 64_000, noAuto: true },
         { id: "gemma-4-26b-a4b-it:free", tags: ["tools", "vision", "reasoning"], priority: 22, context: 64_000, noAuto: true },
-        { id: "qwen3.6-35b-a3b:free", tags: ["tools", "vision", "reasoning"], priority: 21, context: 40_000, noAuto: true },
-        { id: "ministral-3-8b-instruct:free", tags: ["fast", "tools", "vision"], priority: 18, context: 64_000, noAuto: true },
+        { id: "qwen3.6-27b:free", tags: ["tools", "vision"], priority: 25, context: 64_000, noAuto: true, disabled: true },
+        { id: "gemma-4-31b-it:free", tags: ["tools", "vision", "reasoning"], priority: 24, context: 40_000, noAuto: true, disabled: true },
+        { id: "mistral-small-3.2-24b-instruct:free", tags: ["tools", "vision"], priority: 23, context: 64_000, noAuto: true, disabled: true },
+        { id: "qwen3.6-35b-a3b:free", tags: ["tools", "vision", "reasoning"], priority: 21, context: 40_000, noAuto: true, disabled: true },
+        { id: "ministral-3-8b-instruct:free", tags: ["fast", "tools", "vision"], priority: 18, context: 64_000, noAuto: true, disabled: true },
       ],
     },
     {
