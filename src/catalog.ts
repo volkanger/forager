@@ -451,8 +451,12 @@ export const DEFAULT_CATALOG: Catalog = {
       modelsUrl: "https://api.sambanova.ai/v1/models",
       resetTz: "UTC",
       streamUsage: true,
+      // Disabled 2026-09-17: a fresh key without a card gets 402 "A payment method is required" on
+      // DeepSeek-V3.1 and V3.2 alike, and the /v1/models list still answers. The docs' "free while no
+      // payment method is on the account" no longer holds, and adding a card makes it paid.
+      disabled: true,
       notes:
-        "Free only while NO payment method is on the account (adding a card switches to paid). Docs: 20 req/min, 20 req/day, 200K tokens/day per model. FreeLLMAPI once saw 402s here.",
+        "Disabled: API calls return 402 'A payment method is required' without a card (tested 2026-09-17), and a card switches the account to paid.",
       models: [
         { id: "DeepSeek-V3.1", tags: ["smart", "tools", "coding"], priority: 64, context: 131_072, limits: [{ window: "minute", requests: 20 }, { window: "day", requests: 20, tokens: 200000 }] },
         { id: "DeepSeek-V3.2", tags: ["smart", "tools", "coding"], priority: 63, context: 32_768, limits: [{ window: "minute", requests: 20 }, { window: "day", requests: 20, tokens: 200000 }] },
@@ -525,8 +529,13 @@ export const DEFAULT_CATALOG: Catalog = {
       timeoutMs: 60_000,
       modelIdPattern: "^agnes-",
       allowUnlisted: true,
-      notes: "Promotional $0 pricing on Agnes' own models (can end). 20 req/min for text; no published daily cap.",
-      limits: [{ window: "minute", requests: 20 }],
+      // Tested 2026-09-17: agnes-2.0-flash answered "ok" (0.8 s) and read the red test PNG ("Red", 2.7 s),
+      // but the "free users" rate limit ("Upgrade to a Token Plan") tripped after one request every
+      // ~25 s, and a minute later Cloudflare in front of Agnes answered 1015 (IP rate limit, and Workers
+      // share egress IPs). Docs say 20 req/min; real capacity is closer to 1-2/min. Tools and strict
+      // schemas are untested for that reason.
+      notes: "Promotional $0 pricing on Agnes' own models (can end). Docs say 20 req/min, but free users hit a rate limit after about one request per 25 s, then Cloudflare 1015 blocks (tested 2026-09-17). No published daily cap.",
+      limits: [{ window: "minute", requests: 2 }],
       models: [{ id: "agnes-2.0-flash", tags: ["tools", "vision"], priority: 42, context: 262_144 }],
     },
     {
