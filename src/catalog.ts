@@ -296,6 +296,8 @@ export const DEFAULT_CATALOG: Catalog = {
       resetTz: "UTC",
       streamUsage: true,
       allowUnlisted: true,
+      notes:
+        "API Trial endpoints. NVIDIA logs requests for security and to improve its products, and asks that no confidential or personal data (such as faces or voices of people) be sent.",
       limits: [{ window: "minute", requests: 40 }],
       models: [
         { id: "moonshotai/kimi-k3", tags: ["smart", "tools", "coding"], priority: 86 },
@@ -303,6 +305,18 @@ export const DEFAULT_CATALOG: Catalog = {
         { id: "z-ai/glm-5.3-flash", tags: ["fast", "tools", "coding"], priority: 74 },
         { id: "nvidia/nemotron-3-super-120b-a12b", tags: ["tools"], priority: 66 },
         { id: "openai/gpt-oss-20b", tags: ["fast", "tools"], priority: 58 },
+        // Vision probe 2026-09-17 (a 32x32 red PNG, a 591 KB inline two-color PNG, a nested strict schema with
+        // an image, a tool call). Both below read images, but carry no tags and stay out of auto on purpose:
+        // NVIDIA logs requests to improve its products and asks for no personal data such as faces, and
+        // auto:vision can't tell whether a photo has people in it. Callable by name only.
+        // nemotron-3-nano-omni: small and large image right (10 s, 5 s), image schema exact once then a 30 s
+        // timeout, tool call OK once after a 503 "Worker local total request limit reached (16/16)".
+        { id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", tags: [], priority: 40, noAuto: true },
+        // llama-3.2-11b-vision: large image right (2.2 s), tool call OK, but called the tiny red square "Black"
+        // and answered the image schema with invented objects in prose. meta/llama-3.2-90b-vision-instruct
+        // was not added: 4 of 4 timeouts, including no headers within 15 s when streamed. The 591 KB inline
+        // image cost the Worker 4 ms of CPU, so large photos are fine on the free plan.
+        { id: "meta/llama-3.2-11b-vision-instruct", tags: [], priority: 35, noAuto: true },
       ],
     },
     {
