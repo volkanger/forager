@@ -543,32 +543,6 @@ export const DEFAULT_CATALOG: Catalog = {
       ],
     },
     {
-      id: "amd",
-      name: "AMD Radeon Cloud Token Factory",
-      keyEnv: "AMD_RADEON_API_KEY",
-      signupUrl: "https://developer.amd.com.cn/radeon/tokenfactory",
-      // Added 2026-09-16 from docs (amd-aim.github.io/radeon-cloud-docs, dated 2026-09-15); untested.
-      // Token Factory exists only on the China developer site; the global console
-      // (radeon-global.anruicloud.com) is GPU notebooks only and has no model API (AMD hackathon guide).
-      directUrl: "https://developer.amd.com.cn/radeon/api/v1/chat/completions",
-      modelsUrl: "https://developer.amd.com.cn/radeon/api/v1/models",
-      // One docs page says the daily quota resets at midnight Beijing time, another says rolling.
-      resetTz: "Asia/Shanghai",
-      // Thinking is on by default and reasoning comes before the first content byte.
-      timeoutMs: 90_000,
-      notes:
-        "Public Free Model APIs: $10 of usage per day per account, 20 req/min per account, 8 concurrent per key. AMD publishes no per-model prices, so Forager tracks the low end of AMD's own '~10M-111M tokens/day' estimate. Terms (2026-09-10) forbid exposing the API behind a proxy, gateway or aggregator and pooling keys: one personal key for your own use only. Thinking is on by default and counts against max_tokens.",
-      limits: [{ window: "minute", requests: 20 }, { window: "day", tokens: 10_000_000 }],
-      models: [
-        { id: "DeepSeek-V4.1-Flash", tags: ["smart", "tools", "vision", "reasoning", "coding"], priority: 66, context: 1_048_576 },
-        { id: "Qwen3.8-Flash-Next", tags: ["smart", "tools", "vision", "reasoning"], priority: 60, context: 262_144 },
-        { id: "DeepSeek-V4-Flash", tags: ["smart", "tools", "reasoning", "coding"], priority: 59, context: 1_048_576 },
-        { id: "DeepSeek-V4-Flash-Vision-Exp", tags: ["tools", "vision", "reasoning"], priority: 56, context: 1_048_576 },
-        { id: "Qwen3.8-27B", tags: ["tools", "vision", "reasoning"], priority: 50, context: 131_072 },
-        { id: "MiniCPM5-2B", tags: ["fast", "tools"], priority: 20, context: 131_072 },
-      ],
-    },
-    {
       id: "ovh",
       name: "OVHcloud AI Endpoints (anonymous)",
       // Never add a key: authenticated AI Endpoints calls are billed per token. Anonymous only.
@@ -589,7 +563,7 @@ export const DEFAULT_CATALOG: Catalog = {
       models: [
         { id: "Qwen2.5-VL-72B-Instruct", tags: ["vision"], priority: 30, context: 32_000, noAuto: true },
         { id: "Mistral-Small-3.2-24B-Instruct-2506", tags: ["tools", "vision"], priority: 28, context: 128_000, noAuto: true },
-        // Untested: 429 on every attempt 2026-09-16 (throttle from the calls above). Vision per AMD's catalog.
+        // Untested: 429 on every attempt 2026-09-16 (throttle from the calls above). Qwen3.8 reads images.
         { id: "Qwen3.8-27B", tags: ["tools", "vision", "reasoning"], priority: 27, context: 131_072, noAuto: true },
       ],
     },
