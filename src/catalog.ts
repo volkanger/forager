@@ -209,10 +209,17 @@ export const DEFAULT_CATALOG: Catalog = {
       streamUsage: true,
       notes: "Free plan limits from console.groq.com/docs/rate-limits.",
       models: [
-        { id: "openai/gpt-oss-120b", tags: ["smart", "tools", "reasoning", "coding"], priority: 90, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
+        // Strict json_schema tested 2026-09-17: gpt-oss-120b and gpt-oss-20b returned the exact shape for
+        // a flat {"city"} schema and a nested array/number/enum schema (0.5-1.2 s), so both are `structured`.
+        { id: "openai/gpt-oss-120b", tags: ["smart", "tools", "reasoning", "coding", "structured"], priority: 90, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
+        // Same test: flat schema exact, nested schema once `{"items": []}` (right shape, prompt ignored) and
+        // once exact, so it stays untagged: a schema that holds only sometimes fails silently. Its output
+        // limit is 1,000 tokens/minute (OTPM): max_tokens 1500 got 429 "Request too large", so it only
+        // serves requests asking for less.
         { id: "qwen/qwen3.8-27b", tags: ["smart", "tools", "coding"], priority: 85, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
-        { id: "qwen/qwen3.6-27b", tags: ["tools", "coding"], priority: 75, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
-        { id: "openai/gpt-oss-20b", tags: ["fast", "tools", "reasoning"], priority: 70, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
+        // Disabled 2026-09-17: 404 "does not exist", and Groq's model list no longer has it.
+        { id: "qwen/qwen3.6-27b", tags: ["tools", "coding"], priority: 75, context: 131_072, limits: groqLimits(1000, 8000, 200_000), disabled: true },
+        { id: "openai/gpt-oss-20b", tags: ["fast", "tools", "reasoning", "structured"], priority: 70, context: 131_072, limits: groqLimits(1000, 8000, 200_000) },
         // Tested 2026-09-15: any prompt that triggers web search returns 413 "Request Entity Too Large" when not
         // streaming. Streaming sends the whole reply (answer after </think>) as delta.reasoning, then ends with a
         // 413 error event instead of finish_reason. Prompts without search work. Kept out of auto, auto:smart/fast.

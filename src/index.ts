@@ -457,9 +457,15 @@ function upstreamTarget(account: CloudflareAccount, route: Route): { url: string
 
 /** What to do after a failed upstream call. */
 function failurePolicy(status: number, headers: Headers, body: string): { cooldownMs?: number; scope: "key" | "route" | "model"; skipModel: boolean } {
+  // A single request bigger than the model's per-minute token limit (Groq: "Request too large … on
+  // tokens per minute") fails the same way on every retry, like a 413. Try another model; the key is fine.
+  if (status === 429 && /request too large|reduce your message size/i.test(body)) return { scope: "model", skipModel: true };
   // Billing/credit problems sometimes arrive as 429 (e.g. Gemini "prepayment credits are depleted").
-  // Treat them like 402: the key is tied to paid billing, so keep away from it for a day.
-  if (status === 429 && /credits? (are |is )?depleted|prepay|billing|payment required|insufficient (credits|balance|funds)/i.test(body)) {
+  // Treat them like 402: the key is tied to paid billing, so keep away from it for a day. URLs are
+  // stripped first: Groq ends every rate-limit 429 with "Upgrade to Dev Tier today at
+  // https://console.groq.com/settings/billing", which paused the whole Groq key for a day.
+  const prose = body.replace(/https?:\/\/\S+/g, "");
+  if (status === 429 && /credits? (are |is )?depleted|prepay|billing|payment required|insufficient (credits|balance|funds)/i.test(prose)) {
     return { cooldownMs: 86_400_000, scope: "key", skipModel: false };
   }
   if (status === 429) {
