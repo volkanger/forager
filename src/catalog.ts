@@ -163,7 +163,7 @@ export const DEFAULT_CATALOG: Catalog = {
       modelsUrl: "https://generativelanguage.googleapis.com/v1beta/openai/models",
       resetTz: "America/Los_Angeles",
       notes:
-        "Free tier only while the Google Cloud project has NO billing account attached. Live limits: aistudio.google.com/rate-limit. Free-tier prompts may be used for training.",
+        "Free tier only while the Google Cloud project has NO billing account attached. Image requests took 18-20 s on 2026-09-17. Live limits: aistudio.google.com/rate-limit. Free-tier prompts may be used for training.",
       models: [
         {
           id: "gemini-flash-latest",
@@ -176,8 +176,12 @@ export const DEFAULT_CATALOG: Catalog = {
           ],
         },
         {
+          // Tested 2026-09-17 with a key from a no-billing project: text 1.4 s, image 18 s, tool call
+          // OK, and the strict nested json_schema came back exact both as text (11 s) and with an image
+          // (7 s). gemini-flash-latest passed text/image/tools but was 503 "high demand" on every schema
+          // attempt, so it stays untagged until retested.
           id: "gemini-flash-lite-latest",
-          tags: ["fast", "tools", "vision"],
+          tags: ["fast", "tools", "vision", "structured"],
           priority: 72,
           context: 1_048_576,
           limits: [
@@ -576,17 +580,17 @@ export const DEFAULT_CATALOG: Catalog = {
       // Tested 2026-09-16 without a key, red 32x32 PNG: Qwen2.5-VL-72B and Mistral-Small-3.2 both answered
       // "Red.". Docs say 2 req/min per IP per model, but the third request in a minute got a 429 whichever
       // model it named, and the throttle then held for several minutes. So 2/min across the provider, and
-      // only as a vision fallback (noAuto). From the live Worker the same day, 1 of 6 requests got through
+      // low priority so it is a last resort. From the live Worker the same day, 1 of 6 requests got through
       // ("Red.", ~1.2 s); the rest were immediate 429s (~1 s), because other Cloudflare customers already
       // spend the shared egress IPs' allowance. Cheap to try last, never something to rely on.
       notes:
-        "No key: 2 req/min per IP, and Workers share egress IPs with other Cloudflare customers, so most attempts get a quick 429 (1 of 6 succeeded, 2026-09-16). Do NOT add a key: authenticated calls are billed. Last-resort vision fallback only (auto:vision).",
+        "No key: 2 req/min per IP, and Workers share egress IPs with other Cloudflare customers, so most attempts get a quick 429 (1 of 6 succeeded, 2026-09-16). Do NOT add a key: authenticated calls are billed. Low priority: a last resort.",
       limits: [{ window: "minute", requests: 2 }],
       models: [
-        { id: "Qwen2.5-VL-72B-Instruct", tags: ["vision"], priority: 30, context: 32_000, noAuto: true },
-        { id: "Mistral-Small-3.2-24B-Instruct-2506", tags: ["tools", "vision"], priority: 28, context: 128_000, noAuto: true },
+        { id: "Qwen2.5-VL-72B-Instruct", tags: ["vision"], priority: 30, context: 32_000 },
+        { id: "Mistral-Small-3.2-24B-Instruct-2506", tags: ["tools", "vision"], priority: 28, context: 128_000 },
         // Untested: 429 on every attempt 2026-09-16 (throttle from the calls above). Qwen3.8 reads images.
-        { id: "Qwen3.8-27B", tags: ["tools", "vision", "reasoning"], priority: 27, context: 131_072, noAuto: true },
+        { id: "Qwen3.8-27B", tags: ["tools", "vision", "reasoning"], priority: 27, context: 131_072 },
       ],
     },
     {
@@ -659,20 +663,22 @@ export const DEFAULT_CATALOG: Catalog = {
       modelIdPattern:
         "^(gemma-4-26b-a4b-it|gemma-4-31b-it|mistral-small-3\\.2-24b-instruct|qwen3\\.6-27b|qwen3\\.6-35b-a3b|ministral-3-8b-instruct):free$",
       notes:
-        "10 free requests/day (reset 21:00 UTC); failed and cancelled requests count too. Free models need phone verification on the Electron Hub account first (403 until then). Watching ads raises it to 200, which Forager can't do. Kept for vision only (auto:vision) so text traffic can't spend it.",
+        "10 free requests/day (reset 21:00 UTC); failed and cancelled requests count too. Free models need phone verification on the Electron Hub account first (403 until then). Watching ads raises it to 200, which Forager can't do. Lowest priority, so it's reached only when everything else is busy.",
       limits: [{ window: "day", requests: 10 }],
-      // Tested 2026-09-17 after phone verification, with the red test PNG. gemma-4-26b-a4b-it read it
-      // ("Red", 5.1 s). qwen3.6-27b answered HTTP 200 whose *content* was an oai-reverse-proxy error page
-      // ("The key assigned to your prompt does not support the requested model", model_not_found), so a
-      // broken model looks like a successful answer to the client. Everything not verified is disabled
-      // for that reason; test before enabling. The proxy signature also suggests pooled upstream keys.
+      // Tested 2026-09-17 after phone verification, one request each with the red test PNG.
+      // Working: mistral-small-3.2 ("Red.", 1.0 s), ministral-3-8b ("Red", 1.1 s), gemma-4-26b ("Red", 5.1 s).
+      // qwen3.6-27b answered HTTP 200 whose content was an oai-reverse-proxy error page ("The key assigned
+      // to your prompt does not support the requested model"); `disguisedError()` in src/index.ts now
+      // turns those into failed attempts, verified live. gemma-4-31b answered "Missing" (18 s) and
+      // qwen3.6-35b returned empty content after 73 s, so both are disabled with qwen3.6-27b. The proxy
+      // signature also suggests pooled upstream keys of unclear origin.
       models: [
-        { id: "gemma-4-26b-a4b-it:free", tags: ["tools", "vision", "reasoning"], priority: 22, context: 64_000, noAuto: true },
-        { id: "qwen3.6-27b:free", tags: ["tools", "vision"], priority: 25, context: 64_000, noAuto: true, disabled: true },
-        { id: "gemma-4-31b-it:free", tags: ["tools", "vision", "reasoning"], priority: 24, context: 40_000, noAuto: true, disabled: true },
-        { id: "mistral-small-3.2-24b-instruct:free", tags: ["tools", "vision"], priority: 23, context: 64_000, noAuto: true, disabled: true },
-        { id: "qwen3.6-35b-a3b:free", tags: ["tools", "vision", "reasoning"], priority: 21, context: 40_000, noAuto: true, disabled: true },
-        { id: "ministral-3-8b-instruct:free", tags: ["fast", "tools", "vision"], priority: 18, context: 64_000, noAuto: true, disabled: true },
+        { id: "mistral-small-3.2-24b-instruct:free", tags: ["tools", "vision"], priority: 25, context: 64_000 },
+        { id: "ministral-3-8b-instruct:free", tags: ["fast", "tools", "vision"], priority: 23, context: 64_000 },
+        { id: "gemma-4-26b-a4b-it:free", tags: ["tools", "vision", "reasoning"], priority: 22, context: 64_000 },
+        { id: "qwen3.6-27b:free", tags: ["tools", "vision"], priority: 21, context: 64_000, disabled: true },
+        { id: "gemma-4-31b-it:free", tags: ["tools", "vision", "reasoning"], priority: 20, context: 40_000, disabled: true },
+        { id: "qwen3.6-35b-a3b:free", tags: ["tools", "vision", "reasoning"], priority: 19, context: 40_000, disabled: true },
       ],
     },
     {

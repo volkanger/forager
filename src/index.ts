@@ -381,15 +381,23 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
       });
     }
 
+    // A 200 that carries no answer: nothing has reached the client yet, so park this model and
+    // try the next one, exactly like an HTTP error.
+    const failModel = async (error: string, cooldownMs: number, escalate: boolean) => {
+      await tracker.settle({ route, ok: false, status: 502, latencyMs: Date.now() - started, cooldownMs, cooldownScope: "model", reason: error.slice(0, 120), escalate });
+      exclude.push(`${route.provider}/${route.model}`);
+      attempts.push({ route: route.routeId, status: 502, error: error.slice(0, 300) });
+    };
+
     if (collect && res.body && contentType.includes("text/event-stream")) {
       const collected = await collectSse(res.body);
       if (collected.error !== undefined) {
-        // The provider accepted the request and then streamed an error instead of an answer.
-        // Nothing has reached the client, so treat it like a failed call and try the next model.
-        const reason = collected.error.slice(0, 300);
-        await tracker.settle({ route, ok: false, status: 502, latencyMs: Date.now() - started, cooldownMs: 30_000, cooldownScope: "model", reason, escalate: true });
-        exclude.push(`${route.provider}/${route.model}`);
-        attempts.push({ route: route.routeId, status: 502, error: `error event in stream: ${reason}` });
+        await failModel(`error event in stream: ${collected.error}`, 30_000, true);
+        continue;
+      }
+      const disguised = disguisedError(JSON.stringify(collected.completion));
+      if (disguised) {
+        await failModel(disguised, 3_600_000, false);
         continue;
       }
       const { usage } = collected;
@@ -403,6 +411,11 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     }
 
     const text = await res.text();
+    const disguised = disguisedError(text);
+    if (disguised) {
+      await failModel(disguised, 3_600_000, false);
+      continue;
+    }
     let usage: Usage | undefined;
     let outChars = text.length;
     try {
@@ -553,6 +566,19 @@ function tapSse(body: ReadableStream<Uint8Array>): {
     .catch(() => undefined)
     .then(() => ({ usage, chars }));
   return { stream: transform.readable, done };
+}
+
+/**
+ * Some resellers run oai-reverse-proxy, which reports upstream failures as a normal 200 completion
+ * whose `content` is a markdown error page (Electron Hub, 2026-09-17: "The key assigned to your
+ * prompt does not support the requested model"). A client would take that page as the answer.
+ * Returns a short reason when a response body is one of those, so the attempt fails over instead.
+ * Client-streamed responses aren't checked: their bytes are already on the way to the client.
+ */
+function disguisedError(body: string): string | undefined {
+  if (!body.includes("oai-proxy-error")) return undefined;
+  const note = body.match(/proxy_note\\?":\s*\\?"([^"\\]+)/)?.[1] ?? body.match(/Proxy error \(([^)]+)\)/)?.[1];
+  return `proxy error returned as a 200 answer${note ? `: ${note}` : ""}`;
 }
 
 interface ToolCallDelta {
