@@ -183,8 +183,9 @@ export const DEFAULT_CATALOG: Catalog = {
         {
           // Tested 2026-09-17 with a key from a no-billing project: text 1.4 s, image 18 s, tool call
           // OK, and the strict nested json_schema came back exact both as text (11 s) and with an image
-          // (7 s). gemini-flash-latest passed text/image/tools but was 503 "high demand" on every schema
-          // attempt, so it stays untagged until retested.
+          // (7 s). gemini-flash-latest passed text/image/tools but got 503 "high demand" on all nine schema
+          // attempts across two sessions that day (plain text too, by then), so it stays untagged until a
+          // quieter retest.
           id: "gemini-flash-lite-latest",
           tags: ["fast", "tools", "vision", "structured"],
           priority: 72,
@@ -490,8 +491,10 @@ export const DEFAULT_CATALOG: Catalog = {
       notes: "Free pool: docs say 20 req/min and 200 req/day; a live test elsewhere saw 5 req/min, so Forager assumes 5.",
       limits: [{ window: "minute", requests: 5 }, { window: "day", requests: 200 }],
       // Tested 2026-09-17. minimax-m2.7: "ok" in 3.1 s (0.5 s streamed), correct tool call, but a strict
-      // json_schema came back as prose that starts with its <think> block. deepseek-v4-flash: 429
-      // "model_overloaded" on three tries and one 30 s timeout, so it is unverified. muse-glimmer-30b:
+      // json_schema came back as prose that starts with its <think> block. deepseek-v4-flash: overloaded
+      // at first, then on a retest "ok" in 7 s (with an unrequested explanation after it), a correct
+      // tool call in 15 s, and a strict schema returned as the right JSON followed by a prose note, so
+      // it stays untagged. muse-glimmer-30b:
       // "ok" in 8 s, but it called the red test PNG "black" after 54 s, so it carries no vision tag.
       // Streams put MiniMax's <think>…</think> reasoning inside `content`.
       models: [
