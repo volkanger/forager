@@ -295,7 +295,7 @@
   function meter(l) {
     var pct = l.cap ? Math.min(100, (l.used / l.cap) * 100) : 0;
     var cls = pct >= 100 ? "bad" : pct >= 75 ? "warn" : "";
-    var label = (l.key != null ? "key " + l.key + " · " : "") + l.window + " " + l.metric;
+    var label = (l.keyName ? "key " + l.keyName + " · " : "") + l.window + " " + l.metric;
     var val = l.metric === "usd" ? money(l.used) + " / " + money(l.cap) : fmt(l.used) + " / " + fmt(l.cap);
     return '<div class="meter"><span>' + esc(label) + ' <span class="tags">resets in ' + until(l.resetsAt) + '</span></span><span>' + val +
       '</span><div class="track"><div class="fill ' + cls + '" style="width:' + pct.toFixed(1) + '%"></div></div></div>';
@@ -315,7 +315,7 @@
     ].map(function (s) { return '<div class="stat"><small>' + s[0] + '</small><b>' + s[1] + '</b><small>' + esc(s[2]) + '</small></div>'; }).join("");
 
     $("providers").innerHTML = u.providers.map(function (p) {
-      var status = p.unusable ? '<span class="badge bad">' + esc(p.unusable) + '</span>' : '<span class="badge ok">' + p.keys + ' key' + (p.keys === 1 ? "" : "s") + '</span>';
+      var status = p.unusable ? '<span class="badge bad">' + esc(p.unusable) + '</span>' : '<span class="badge ok">' + p.keys.length + ' key' + (p.keys.length === 1 ? "" : "s") + '</span>';
       var gw = p.viaGateway ? '<span class="badge">AI Gateway</span>' : '<span class="badge">direct</span>';
       var models = p.models.map(function (m) {
         return '<div class="model"><code>' + esc(m.id) + '</code> <span class="tags">p' + m.priority + ' · ' + esc(m.tags.join(", ")) + '</span>' +
@@ -329,7 +329,9 @@
 
     $("cooldowns").innerHTML = u.cooldowns.length
       ? '<table><tr><th>Target</th><th>Reason</th><th class="num">Ends in</th></tr>' + u.cooldowns.map(function (c) {
-          return '<tr><td><code>' + esc(c.target) + '</code></td><td>' + esc(c.reason) + '</td><td class="num">' + until(c.until) + '</td></tr>';
+          // Key-scoped targets end in "#<key id>"; show the key's last 4 characters instead when it's still configured.
+          var target = c.key ? '<code>' + esc(c.target.replace(/#[^#]*$/, "")) + '</code> <span class="tags">key ' + esc(c.key) + '</span>' : '<code>' + esc(c.target) + '</code>';
+          return '<tr><td>' + target + '</td><td>' + esc(c.reason) + '</td><td class="num">' + until(c.until) + '</td></tr>';
         }).join("") + '</table>'
       : '<p class="empty">Nothing cooling down.</p>';
 

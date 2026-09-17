@@ -291,7 +291,7 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     if (target.viaGateway) {
       if (env.CF_AIG_TOKEN) headers["cf-aig-authorization"] = `Bearer ${env.CF_AIG_TOKEN}`;
       if (env.GATEWAY_CACHE_TTL) headers["cf-aig-cache-ttl"] = env.GATEWAY_CACHE_TTL;
-      headers["cf-aig-metadata"] = JSON.stringify({ route: `${route.provider}/${route.model}`, key: route.keyIndex });
+      headers["cf-aig-metadata"] = JSON.stringify({ route: `${route.provider}/${route.model}`, key: route.keyId });
     }
 
     const started = Date.now();

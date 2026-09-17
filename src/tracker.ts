@@ -20,7 +20,7 @@ type Usage = { p: string; req: number; tok: number; usd: number };
 type Counter = Partial<Record<Window, Usage>>;
 
 export interface ScopeRef {
-  /** "g" (whole Worker), "p:<provider>#<key>" or "m:<provider>/<model>#<key>". */
+  /** "g" (whole Worker), "p:<provider>#<keyId>" or "m:<provider>/<model>#<keyId>". */
   id: string;
   tz: string;
   limits: Limit[];
@@ -40,7 +40,7 @@ export interface AcquireInput {
   needs: Needs;
   estIn: number;
   estOut: number;
-  /** Route ids ("p/m#k") or whole models ("p/m") already tried for this request. */
+  /** Route ids ("p/m#<keyId>") or whole models ("p/m") already tried for this request. */
   exclude: string[];
 }
 
@@ -48,6 +48,9 @@ export interface Route {
   routeId: string;
   provider: string;
   model: string;
+  /** Stable id of the key (see keyId()): quota counters and cooldowns follow it. */
+  keyId: string;
+  /** Position in keysFor(); only for round robin and display, since it shifts when keys come and go. */
   keyIndex: number;
   keyEnv: string;
   /** Plaintext provider key for this attempt ("" for keyless). Internal: never returned to clients. */
@@ -133,6 +136,15 @@ interface StoredKey {
   value: string;
 }
 
+/** One usable key slot for a provider. `value` is internal: never logged or returned. */
+interface ProviderKey {
+  id: string;
+  value: string;
+  source: "secret" | "dashboard" | "keyless";
+  last4: string;
+  label?: string;
+}
+
 interface Candidate {
   p: ProviderDef;
   m: ModelDef;
@@ -150,7 +162,8 @@ export class Tracker extends DurableObject<Env> {
   private catalog: Catalog = DEFAULT_CATALOG;
   private openRouterFree: ModelDef[] = [];
   private counters = new Map<string, Counter>();
-  private cooldowns = new Map<string, { until: number; reason: string }>();  private dirty = new Set<string>();
+  private cooldowns = new Map<string, { until: number; reason: string }>();
+  private dirty = new Set<string>();
   private pendingStats = new Map<string, StatDelta>();
   private roundRobin = new Map<string, number>();
   private flushScheduled = false;
@@ -159,6 +172,8 @@ export class Tracker extends DurableObject<Env> {
   private eventHits = new Map<string, number>();
   private githubSync: Promise<unknown> | null = null;
   private storedKeys: StoredKey[] = [];
+  /** Key value → stable short id. Filled before a key can be routed to (constructor, addKey, setCatalog). */
+  private keyIds = new Map<string, string>();
   private unreadableKeys = 0;
   private keystoreSource: "secret" | "generated" = "generated";
   private routerKeys: RouterKey[] = [];
@@ -243,6 +258,7 @@ export class Tracker extends DurableObject<Env> {
           this.unreadableKeys++;
         }
       }
+      await this.indexKeys([...this.catalog.providers, ...DEFAULT_CATALOG.providers]);
     });
   }
 
@@ -278,11 +294,12 @@ export class Tracker extends DurableObject<Env> {
 
       for (let i = 0; i < keyCount; i++) {
         const k = (start + i) % keyCount;
+        const key = keys[k];
         const modelRef = `${p.id}/${m.id}`;
-        const routeId = `${modelRef}#${k}`;
+        const routeId = `${modelRef}#${key.id}`;
         if (input.exclude.includes(routeId) || input.exclude.includes(modelRef)) continue;
 
-        const cooldown = this.activeCooldown([`c:${p.id}#${k}`, `c:${routeId}`, `c:${modelRef}`], now);
+        const cooldown = this.activeCooldown([`c:${p.id}#${key.id}`, `c:${routeId}`, `c:${modelRef}`], now);
         if (cooldown) {
           note(`${modelRef}: cooling down (${cooldown.reason})`);
           soonest = Math.min(soonest, cooldown.until);
@@ -290,7 +307,7 @@ export class Tracker extends DurableObject<Env> {
         }
 
         const scopes: ScopeRef[] = [global];
-        if (p.limits?.length) scopes.push({ id: `p:${p.id}#${k}`, tz, limits: p.limits, margin });
+        if (p.limits?.length) scopes.push({ id: `p:${p.id}#${key.id}`, tz, limits: p.limits, margin });
         if (m.limits?.length) scopes.push({ id: `m:${routeId}`, tz, limits: m.limits, margin });
 
         let hit: { window: Window; metric: string; scope: ScopeRef } | undefined;
@@ -318,9 +335,10 @@ export class Tracker extends DurableObject<Env> {
             routeId,
             provider: p.id,
             model: m.id,
+            keyId: key.id,
             keyIndex: k,
             keyEnv: p.keyEnv,
-            key: keys[k],
+            key: key.value,
             gateway: p.gateway,
             directUrl: p.directUrl,
             headers: p.headers,
@@ -368,7 +386,7 @@ export class Tracker extends DurableObject<Env> {
     if (s.cooldownMs && s.cooldownMs > 0) {
       const id =
         s.cooldownScope === "key"
-          ? `c:${r.provider}#${r.keyIndex}`
+          ? `c:${r.provider}#${r.keyId}`
           : s.cooldownScope === "model"
             ? `c:${r.provider}/${r.model}`
             : `c:${r.routeId}`;
@@ -432,7 +450,7 @@ export class Tracker extends DurableObject<Env> {
   usage() {
     this.flush();
     const now = Date.now();
-    const view = (scope: ScopeRef, key: number | null) =>
+    const view = (scope: ScopeRef, key: ProviderKey | null) =>
       scope.limits.flatMap((l) =>
         (["requests", "tokens", "usd"] as const)
           .filter((metric) => l[metric] !== undefined)
@@ -440,7 +458,8 @@ export class Tracker extends DurableObject<Env> {
             const used = this.used(scope.id, l.window, scope.tz, now);
             const limit = l[metric]!;
             return {
-              key,
+              key: key?.id ?? null,
+              keyName: key ? keyName(key) : null,
               window: l.window,
               metric,
               used: metric === "requests" ? used.req : metric === "tokens" ? used.tok : Math.round(used.usd * 1e6) / 1e6,
@@ -451,37 +470,44 @@ export class Tracker extends DurableObject<Env> {
           }),
       );
 
+    const names = new Map<string, string>();
     const providers = this.providers().map((p) => {
-      const keys = this.keysFor(p).length;
+      const keys = this.keysFor(p);
       const tz = p.resetTz ?? "UTC";
       const margin = this.marginFor(p);
-      const keyIdx = [...Array(keys).keys()];
+      for (const k of keys) names.set(`${p.id}#${k.id}`, keyName(k));
       return {
         id: p.id,
         name: p.name,
         notes: p.notes,
         keyEnv: p.keyEnv,
-        keys,
+        keys: keys.map(({ id, source, last4, label }) => ({ id, source, last4, label })),
         requiresCard: !!p.requiresCard,
         signupUrl: p.signupUrl,
         viaGateway: !!(p.gateway && this.accountId && this.env.AI_GATEWAY_ID),
         unusable: this.unusableReason(p),
         resetTz: tz,
-        limits: keyIdx.flatMap((k) => view({ id: `p:${p.id}#${k}`, tz, limits: p.limits ?? [], margin }, k)),
+        limits: keys.flatMap((k) => view({ id: `p:${p.id}#${k.id}`, tz, limits: p.limits ?? [], margin }, k)),
         models: p.models
           .filter((m) => this.allowed(p, m))
           .map((m) => ({
             id: m.id,
             tags: m.tags ?? [],
             priority: m.priority ?? 0,
-            limits: keyIdx.flatMap((k) => view({ id: `m:${p.id}/${m.id}#${k}`, tz, limits: m.limits ?? [], margin }, k)),
+            limits: keys.flatMap((k) => view({ id: `m:${p.id}/${m.id}#${k.id}`, tz, limits: m.limits ?? [], margin }, k)),
           })),
       };
     });
 
     const cooldowns = [...this.cooldowns.entries()]
       .filter(([, c]) => c.until > now)
-      .map(([id, c]) => ({ target: id.slice(2), until: c.until, reason: c.reason }));
+      .map(([id, c]) => {
+        const target = id.slice(2);
+        const hash = target.lastIndexOf("#");
+        // Key-scoped targets end in "#<keyId>"; a key that was since removed has no name.
+        const key = hash < 0 ? null : (names.get(`${target.split(/[/#]/)[0]}${target.slice(hash)}`) ?? null);
+        return { target, key, until: c.until, reason: c.reason };
+      });
 
     const today = periodId("day", now, "UTC");
     const weekAgo = periodId("day", now - 6 * 86_400_000, "UTC");
@@ -512,8 +538,10 @@ export class Tracker extends DurableObject<Env> {
     return { catalog: this.catalog, custom: !!this.kvGet("catalog"), openRouterFree: this.openRouterFree.length };
   }
 
-  setCatalog(input: unknown): { ok: true; version: string } {
+  async setCatalog(input: unknown): Promise<{ ok: true; version: string }> {
     const catalog = validateCatalog(input);
+    // A catalog can point a provider at a different secret, whose keys need ids before routing.
+    await this.indexKeys(catalog.providers);
     this.catalog = catalog;
     this.kvSet("catalog", JSON.stringify(catalog));
     return { ok: true, version: catalog.version };
@@ -935,6 +963,7 @@ export class Tracker extends DurableObject<Env> {
     const label = (input.label ?? "").trim().slice(0, 60) || `Key added ${new Date().toISOString().slice(0, 10)}`;
     const { ciphertext, iv } = await seal(this.master, value);
     const key: StoredKey = { id: crypto.randomUUID(), provider: provider.id, label, last4: value.slice(-4), createdAt: Date.now(), value };
+    this.keyIds.set(value, await keyId(value));
     this.sql.exec(
       `INSERT INTO provider_keys (id, provider, label, last4, ciphertext, iv, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       key.id,
@@ -946,15 +975,24 @@ export class Tracker extends DurableObject<Env> {
       key.createdAt,
     );
     this.storedKeys.push(key);
-    // A fresh key deserves a fresh start: clear old pauses on this provider's key slots.
-    this.resetCounters(`c:${provider.id}`);
+    // Key and route cooldowns follow each key's id, so the new key starts clean and other keys keep
+    // theirs. Model-wide pauses (plan 403s, 404s, 5xx strikes) may not apply to the new key: clear them.
+    const prefix = `c:${provider.id}/`;
+    for (const id of [...this.cooldowns.keys()]) if (id.startsWith(prefix) && !id.includes("#")) this.cooldowns.delete(id);
+    for (const table of ["cooldowns", "strikes"]) {
+      this.sql.exec(`DELETE FROM ${table} WHERE substr(id, 1, ?) = ? AND instr(id, '#') = 0`, prefix.length, prefix);
+    }
     return { id: key.id, last4: key.last4 };
   }
 
   deleteKey(id: string): { deleted: boolean } {
     const before = this.storedKeys.length;
+    const removed = this.storedKeys.find((k) => k.id === id);
     this.storedKeys = this.storedKeys.filter((k) => k.id !== id);
     this.sql.exec(`DELETE FROM provider_keys WHERE id = ?`, id);
+    // Its counters and cooldowns stay under its id, so re-adding the same key picks them back up.
+    const stillUsed = (v: string) => this.storedKeys.some((k) => k.value === v) || this.catalog.providers.some((p) => splitKeys(this.env[p.keyEnv]).includes(v));
+    if (removed && !stillUsed(removed.value)) this.keyIds.delete(removed.value);
     return { deleted: this.storedKeys.length < before };
   }
 
@@ -966,9 +1004,10 @@ export class Tracker extends DurableObject<Env> {
         .map(async (p) => {
           const keys = this.keysFor(p);
           if (keys.length === 0) return { provider: p.id, skipped: "no API key" };
+          const key = keys[0].value;
           try {
             const res = await fetch(p.modelsUrl!.replace("{ACCOUNT_ID}", this.accountId ?? ""), {
-              headers: { ...p.headers, ...(keys[0] ? { authorization: `Bearer ${keys[0]}` } : {}) },
+              headers: { ...p.headers, ...(key ? { authorization: `Bearer ${key}` } : {}) },
               signal: AbortSignal.timeout(15_000),
             });
             if (!res.ok) return { provider: p.id, status: res.status, error: (await res.text()).slice(0, 200) };
@@ -1024,10 +1063,30 @@ export class Tracker extends DurableObject<Env> {
       });
   }
 
-  /** Keys from the Wrangler secret first, then keys added in the dashboard. Keyless providers get one empty slot. */
-  private keysFor(p: ProviderDef): string[] {
-    const keys = [...splitKeys(this.env[p.keyEnv]), ...this.storedKeys.filter((k) => k.provider === p.id).map((k) => k.value)];
-    return keys.length === 0 && p.keyless ? [""] : keys;
+  /**
+   * Keys from the Wrangler secret first, then keys added in the dashboard. Keyless providers get one empty slot.
+   * The order only drives round robin: counters and cooldowns are keyed by each key's id, so removing
+   * or reordering keys never hands one key's quota state to another.
+   */
+  private keysFor(p: ProviderDef): ProviderKey[] {
+    const entries: Omit<ProviderKey, "id" | "last4">[] = [
+      ...splitKeys(this.env[p.keyEnv]).map((value) => ({ value, source: "secret" as const })),
+      ...this.storedKeys.filter((k) => k.provider === p.id).map((k) => ({ value: k.value, source: "dashboard" as const, label: k.label })),
+    ];
+    const keys = entries.flatMap((e) => {
+      const id = this.keyIds.get(e.value);
+      if (id) return [{ ...e, id, last4: e.value.slice(-4) }];
+      // Unreachable while indexKeys() runs on every path that adds a key; never guess an id.
+      console.error(`Skipping a ${p.id} key that has no id yet`);
+      return [];
+    });
+    return keys.length === 0 && p.keyless ? [{ id: "keyless", value: "", source: "keyless", last4: "" }] : keys;
+  }
+
+  /** Computes ids for every secret and stored key the given providers can use. */
+  private async indexKeys(providers: ProviderDef[]): Promise<void> {
+    const values = [...providers.flatMap((p) => splitKeys(this.env[p.keyEnv])), ...this.storedKeys.map((k) => k.value)];
+    for (const value of values) if (!this.keyIds.has(value)) this.keyIds.set(value, await keyId(value));
   }
 
   /** Card-unlocked providers keep extra headroom. */
@@ -1232,4 +1291,19 @@ export class Tracker extends DurableObject<Env> {
   private kvSet(k: string, v: string): void {
     this.sql.exec(`INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`, k, v);
   }
+}
+
+/**
+ * Stable short id for a provider key: the first 8 hex characters of its SHA-256. The same key
+ * gets the same id whether it comes from a secret or the dashboard, and after being removed and
+ * re-added, so its quota counters and cooldowns come back with it. Shown in admin JSON and route
+ * ids; it doesn't reveal the key.
+ */
+async function keyId(value: string): Promise<string> {
+  return (await sha256Hex(value)).slice(0, 8);
+}
+
+/** Display name for a key in admin JSON: its last 4 characters only. */
+function keyName(k: ProviderKey): string {
+  return k.source === "keyless" ? "keyless" : `····${k.last4}`;
 }

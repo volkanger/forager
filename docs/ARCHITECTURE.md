@@ -61,7 +61,7 @@ landing ─── /api/* ──────►           ▼                 ▼
      - For `auto*`, models missing a needed capability or with too small a context window are dropped. Needs are `tools` (the body has `tools`), `vision` (an image part) and `structured` (`response_format.type` is `json_schema`). Naming a model explicitly bypasses these checks — you asked for that model, you get it.
    - **Guards**: disabled providers/models, providers with no key, and model ids failing the provider's `modelIdPattern` (the $0 guard, e.g. OpenRouter `:free$`) never become candidates.
    - **Client exclusions**: `x-forager-exclude: provider/model, provider/model` (up to 20 entries) seeds the same exclude list the failover loop uses, so a caller that judged an answer unusable can ask for a different model. Forager only sees HTTP, so a reply that parses but fails the caller's own validation still counts as a success here; without the header a retry would get the same top-priority model back. Unknown names are ignored.
-   - **For each candidate and each key slot** (round robin per provider): skip it if excluded for this request or cooling down; otherwise check every limit in three scopes: global (`g`), provider+key (`p:<provider>#<k>`), model+key (`m:<provider>/<model>#<k>`).
+   - **For each candidate and each key** (round robin per provider): skip it if excluded for this request or cooling down; otherwise check every limit in three scopes: global (`g`), provider+key (`p:<provider>#<keyId>`), model+key (`m:<provider>/<model>#<keyId>`). Route ids are `<provider>/<model>#<keyId>`, and `x-forager-exclude` accepts them to rule out one key.
    - **First fit wins**: the estimated request, tokens and USD are **reserved** in every scope, and a `Route` goes back to the Worker (including the plaintext provider key, which never leaves the Worker).
    - **Nothing fits**: 429 with a `blocked` summary of why. The soonest cooldown or cycle reset goes in the body as `error.retry_after_seconds`; the `retry-after` header carries the same figure capped at `MAX_RETRY_AFTER` (60 s), because OpenAI-compatible SDKs sleep for the advertised time with no ceiling and an uncapped day or month wait hangs the caller instead of failing it.
 4. **Build the upstream call** (`upstreamTarget()`):
@@ -93,7 +93,7 @@ landing ─── /api/* ──────►           ▼                 ▼
 | 408, 5xx, network error, timeout | 30 s, then 5 min, then 30 min for repeats within an hour (reset by a success; strikes in the `strikes` table) | model |
 | 400, 413, 422… | none; try another model | – |
 
-Cooldown ids: `c:<provider>#<k>` (key), `c:<provider>/<model>#<k>` (route), `c:<provider>/<model>` (model). They're persisted immediately, so a restart doesn't forget a 24 h billing pause.
+Cooldown ids: `c:<provider>#<keyId>` (key), `c:<provider>/<model>#<keyId>` (route), `c:<provider>/<model>` (model). They're persisted immediately, so a restart doesn't forget a 24 h billing pause.
 
 ## Quota cycles and limits
 
@@ -113,7 +113,7 @@ SQLite tables (all `WITHOUT ROWID` so an upsert writes one row):
 
 | Table | Contents |
 |---|---|
-| `counters (id, data)` | Per scope id, JSON `{minute:{p,req,tok,usd}, hour:…, day:…, month:…}` where `p` is the cycle id. A stale `p` reads as zero. |
+| `counters (id, data)` | Per scope id (`g`, `p:<provider>#<keyId>`, `m:<provider>/<model>#<keyId>`), JSON `{minute:{p,req,tok,usd}, hour:…, day:…, month:…}` where `p` is the cycle id. A stale `p` reads as zero. |
 | `cooldowns (id, until, reason)` | Active pauses |
 | `strikes (id, count, at)` | Repeat timeouts/5xx per model, for escalating cooldowns; cleared by a success or after an hour |
 | `stats (day, provider, model, requests, ok, tok_in, tok_out, usd, latency_ms)` | Daily per-model stats (kept 90 days) |
@@ -129,13 +129,20 @@ SQLite tables (all `WITHOUT ROWID` so an upsert writes one row):
 
 ## Provider keys
 
-`keysFor(provider)` = keys from the Wrangler secret named by `keyEnv` (comma/newline separated), then dashboard-added keys. Keyless providers (Kilo) get one empty slot. Key slot index `k` is stable within that order.
+`keysFor(provider)` = keys from the Wrangler secret named by `keyEnv` (comma/newline separated), then dashboard-added keys. Keyless providers (Kilo) get one empty slot with the id `keyless`.
+
+**Key ids:** every counter scope, cooldown and route id names a key by its **key id**, the first 8 hex characters of the SHA-256 of the key value (`keyId()` in `src/tracker.ts`), never by its position. The position (`Route.keyIndex`) shifts whenever a key is added, removed or moved between the secret and the dashboard, so it only drives round robin. The id follows the key:
+- **Removing a key** leaves every other key's counters and cooldowns where they are. (With positional ids, deleting the `GEMINI_API_KEY` secret on 2026-09-17 slid the dashboard key into slot 0 and handed it the old key's 23 h 429 cooldown.)
+- **Re-adding the same key**, from either source, picks its counters and cooldowns back up, since the provider still remembers that key's usage too.
+- **A new key** starts clean. Adding one clears only that provider's model-wide cooldowns and strikes (`c:<provider>/<model>`), which may not apply to it; other keys keep theirs.
+
+Ids are computed when the Durable Object starts (secret keys for the current and default catalogs, plus stored keys), when a key is added and when `PUT /admin/catalog` could point a provider at another secret. `keysFor()` skips a key without an id rather than guessing one. Admin JSON shows key ids and `keyName` (`····` plus the last 4 characters) only; `/admin/usage` lists each provider's `keys` as `{id, source, last4, label}`, and cooldowns carry `key` (the name, or `null` once that key is gone). A key id is a truncated hash, so it doesn't reveal the key.
 
 **Encryption** (`src/keystore.ts`):
 - **Master key**: `KEYSTORE_SECRET` if set (64 hex chars used raw, otherwise SHA-256 of a 16+ character string). Without it, a random key is generated once and kept in `kv.keystore_key`.
 - **Trade-off**: the generated key sits in the same storage as the ciphertext, so it keeps keys out of APIs and logs but not away from someone with storage access.
 - **What the API reveals**: `listKeys()` never returns key values, only labels and last 4 characters. Changing the master key makes stored keys unreadable (`unreadableKeys` is reported).
-- **Adding a key** clears that provider's cooldowns.
+- **Adding a key** clears that provider's model-wide cooldowns; key and route cooldowns stay with the key they belong to.
 
 ## Authentication and first-run setup
 
