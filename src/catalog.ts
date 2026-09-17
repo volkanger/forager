@@ -621,11 +621,13 @@ export const DEFAULT_CATALOG: Catalog = {
       notes:
         "Hacker plan, no card: free models are rate-limited with unpublished 'conservative caps' (429 + Retry-After). Free models only unlock once the workspace owner links a GitHub account that isn't brand new (429 free_rate_limited until then). Topping up raises the limits.",
       models: [
-        // Added 2026-09-16 from the public model list; untested. glm-5.3-flash-free lists text, image
-        // and video input.
+        // Tested 2026-09-17 through the Worker, all fast: "ok" in 1.4-3.1 s, glm-5.3-flash read the red
+        // test PNG in 3.3 s and made a correct tool call. Strict nested json_schema (array of objects,
+        // number, enum): deepseek-v4-flash and hy3 returned the exact shape; glm-5.3-flash answered in
+        // markdown with and without an image, so it stays untagged.
         { id: "z-ai/glm-5.3-flash-free", tags: ["smart", "tools", "vision", "coding"], priority: 55, context: 1_000_000 },
-        { id: "deepseek/deepseek-v4-flash-free", tags: ["smart", "tools", "coding"], priority: 53 },
-        { id: "tencent/hy3-free", tags: ["tools"], priority: 39 },
+        { id: "deepseek/deepseek-v4-flash-free", tags: ["smart", "tools", "coding", "structured"], priority: 53, context: 1_048_576 },
+        { id: "tencent/hy3-free", tags: ["tools", "reasoning", "structured"], priority: 39, context: 262_144 },
       ],
     },
     {
