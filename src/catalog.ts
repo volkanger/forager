@@ -548,8 +548,8 @@ export const DEFAULT_CATALOG: Catalog = {
       keyEnv: "AMD_RADEON_API_KEY",
       signupUrl: "https://developer.amd.com.cn/radeon/tokenfactory",
       // Added 2026-09-16 from docs (amd-aim.github.io/radeon-cloud-docs, dated 2026-09-15); untested.
-      // The global console (radeon-global.anruicloud.com) documents no API path; its /v1, /api/v1 and
-      // /radeon/api/v1 all 404, so a global key may need a different URL — check when testing.
+      // Token Factory exists only on the China developer site; the global console
+      // (radeon-global.anruicloud.com) is GPU notebooks only and has no model API (AMD hackathon guide).
       directUrl: "https://developer.amd.com.cn/radeon/api/v1/chat/completions",
       modelsUrl: "https://developer.amd.com.cn/radeon/api/v1/models",
       // One docs page says the daily quota resets at midnight Beijing time, another says rolling.
