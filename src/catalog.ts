@@ -82,6 +82,14 @@ export interface ProviderDef {
   allowUnlisted?: boolean;
   /** Provider accepts stream_options.include_usage (exact token accounting for streams). */
   streamUsage?: boolean;
+  /**
+   * Always call the provider with `stream: true`, and assemble the stream into one
+   * chat.completion for clients that didn't ask for streaming. Meant for providers that answer
+   * streams promptly but sit on non-streaming responses: the header timeout then only has to cover
+   * time to first byte, and an error event mid-stream still fails over, because nothing has
+   * reached the client yet.
+   */
+  forceStream?: boolean;
   headers?: Record<string, string>;
   models: ModelDef[];
   disabled?: boolean;
@@ -575,7 +583,13 @@ export const DEFAULT_CATALOG: Catalog = {
       directUrl: "https://tokenharbor.ai/v1/chat/completions",
       modelsUrl: "https://tokenharbor.ai/v1/models",
       resetTz: "UTC",
-      timeoutMs: 120_000,
+      // Streamed on the first guess that it only sat on non-streaming answers ("ok" streamed in
+      // 1.4 s, 60 s without). Repeat runs the same day disproved it: streamed requests also waited
+      // 29-60 s for the first byte, so the delay is a queue in front of every request. Kept on
+      // because it costs nothing and lets a mid-stream error fail over; it is not a speed fix.
+      forceStream: true,
+      // Time to first byte, which reached 60 s. The provider is a slow fallback, so wait for it.
+      timeoutMs: 90_000,
       // $0 guard: Token Harbor also sells Claude/GPT; per its quickstart only ids ending in ":free"
       // never charge the balance.
       modelIdPattern: ":free$",
@@ -584,9 +598,9 @@ export const DEFAULT_CATALOG: Catalog = {
         "Free monthly allowance (4 windows of 7 days), size not published; no card. Blocks mainland China, Hong Kong and Macau. Free-model prompts may be kept for diagnostics and product improvement.",
       models: [
         // Tested 2026-09-16 through the Worker. /v1/models lists exactly these three :free ids.
-        // Streaming is fast for text ("ok" in 1.4 s); the same request without streaming took 60 s,
-        // which is why timeoutMs is 120 s. Images are slow even when streaming: a 32x32 PNG took 44 s
-        // on deepseek-v4.1-flash and 76 s on mimo-v2.5 (both answered "Red", after hidden reasoning).
+        // "ok" took anywhere from 1.4 s to 60 s, streamed or not. A 32x32 PNG took 44 s on
+        // deepseek-v4.1-flash and 76 s on mimo-v2.5 (both answered "Red", after hidden reasoning).
+        // deepseek-v4-flash made two parallel tool calls correctly.
         // Priorities sit below the faster providers so this is a fallback, not the first stop.
         { id: "deepseek-v4-flash:free", tags: ["smart", "tools", "coding"], priority: 36, context: 1_048_576 },
         { id: "deepseek-v4.1-flash:free", tags: ["smart", "tools", "vision", "reasoning", "coding"], priority: 35, context: 1_048_576 },

@@ -246,7 +246,8 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
   const maxAttempts = Number(env.MAX_ATTEMPTS ?? 6);
   // The timeout covers response headers only. Streams send headers before the first token, so they
   // get a shorter wait; non-streaming headers arrive only after the whole answer is generated.
-  const defaultTimeoutMs = stream ? Number(env.UPSTREAM_STREAM_TIMEOUT_MS ?? 15_000) : Number(env.UPSTREAM_TIMEOUT_MS ?? 30_000);
+  const streamTimeoutMs = Number(env.UPSTREAM_STREAM_TIMEOUT_MS ?? 15_000);
+  const plainTimeoutMs = Number(env.UPSTREAM_TIMEOUT_MS ?? 30_000);
 
   const account = await cloudflareAccount(env);
   // A client can rule out models it has already found unusable for this job, with
@@ -279,8 +280,11 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     const route = acquired.route;
     const key = route.key;
     const target = upstreamTarget(account, route);
-    const upstreamBody: ChatBody = { ...body, model: target.model };
-    if (stream && route.streamUsage) upstreamBody.stream_options = { ...body.stream_options, include_usage: true };
+    // `collect`: the client wants one JSON body, but this provider is only fast when streaming.
+    const collect = !stream && route.forceStream;
+    const upstreamStream = stream || collect;
+    const upstreamBody: ChatBody = { ...body, model: target.model, ...(collect ? { stream: true } : {}) };
+    if (upstreamStream && route.streamUsage) upstreamBody.stream_options = { ...body.stream_options, include_usage: true };
 
     const headers: Record<string, string> = { "content-type": "application/json", ...route.headers };
     if (key) headers.authorization = `Bearer ${key}`;
@@ -292,7 +296,7 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
 
     const started = Date.now();
     const abort = new AbortController();
-    const timeoutMs = route.timeoutMs ?? defaultTimeoutMs;
+    const timeoutMs = route.timeoutMs ?? (upstreamStream ? streamTimeoutMs : plainTimeoutMs);
     const timer = setTimeout(() => abort.abort(), timeoutMs);
     let res: Response;
     try {
@@ -374,6 +378,27 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
       );
       return new Response(tap.stream, {
         headers: { ...outHeaders, "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache" },
+      });
+    }
+
+    if (collect && res.body && contentType.includes("text/event-stream")) {
+      const collected = await collectSse(res.body);
+      if (collected.error !== undefined) {
+        // The provider accepted the request and then streamed an error instead of an answer.
+        // Nothing has reached the client, so treat it like a failed call and try the next model.
+        const reason = collected.error.slice(0, 300);
+        await tracker.settle({ route, ok: false, status: 502, latencyMs: Date.now() - started, cooldownMs: 30_000, cooldownScope: "model", reason, escalate: true });
+        exclude.push(`${route.provider}/${route.model}`);
+        attempts.push({ route: route.routeId, status: 502, error: `error event in stream: ${reason}` });
+        continue;
+      }
+      const { usage } = collected;
+      ctx.waitUntil(
+        settle(usage?.prompt_tokens ?? estIn, usage?.completion_tokens ?? Math.ceil(collected.chars / 4), usage?.prompt_tokens_details?.cached_tokens),
+      );
+      return new Response(JSON.stringify(collected.completion), {
+        status: 200,
+        headers: { ...outHeaders, "content-type": "application/json", "x-forager-collected": "stream" },
       });
     }
 
@@ -528,6 +553,126 @@ function tapSse(body: ReadableStream<Uint8Array>): {
     .catch(() => undefined)
     .then(() => ({ usage, chars }));
   return { stream: transform.readable, done };
+}
+
+interface ToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: string;
+  function?: { name?: string; arguments?: string };
+}
+
+interface CollectedChoice {
+  index: number;
+  message: Record<string, unknown> & { role: string; content: string | null; tool_calls?: ToolCallDelta[] };
+  finish_reason: string | null;
+}
+
+/**
+ * Reads a whole chat.completion SSE stream and rebuilds the non-streaming response: text fields
+ * concatenated per choice, tool call fragments merged by index, the last usage block kept.
+ * `error` is set when the stream carried an error event and produced no answer.
+ */
+async function collectSse(body: ReadableStream<Uint8Array>): Promise<{
+  completion: Record<string, unknown>;
+  usage?: Usage;
+  chars: number;
+  error?: string;
+}> {
+  const choices = new Map<number, CollectedChoice>();
+  const meta: Record<string, unknown> = {};
+  let usage: Usage | undefined;
+  let chars = 0;
+  let error: string | undefined;
+
+  const scan = (line: string) => {
+    if (!line.startsWith("data:")) return;
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") return;
+    let event: {
+      id?: string;
+      created?: number;
+      model?: string;
+      system_fingerprint?: string;
+      usage?: Usage;
+      error?: unknown;
+      choices?: { index?: number; delta?: Record<string, unknown>; finish_reason?: string | null }[];
+    };
+    try {
+      event = JSON.parse(data);
+    } catch {
+      return; // keep-alives and non-JSON events
+    }
+    if (event.error !== undefined) error = typeof event.error === "string" ? event.error : JSON.stringify(event.error);
+    for (const field of ["id", "created", "model", "system_fingerprint"] as const) {
+      if (event[field] !== undefined && meta[field] === undefined) meta[field] = event[field];
+    }
+    if (event.usage) usage = event.usage;
+    for (const part of event.choices ?? []) {
+      const index = part.index ?? 0;
+      let choice = choices.get(index);
+      if (!choice) {
+        choice = { index, message: { role: "assistant", content: null }, finish_reason: null };
+        choices.set(index, choice);
+      }
+      if (part.finish_reason) choice.finish_reason = part.finish_reason;
+      const delta = part.delta ?? {};
+      for (const [field, value] of Object.entries(delta)) {
+        if (field === "role") {
+          if (typeof value === "string") choice.message.role = value;
+        } else if (field === "tool_calls" && Array.isArray(value)) {
+          const calls = (choice.message.tool_calls ??= []);
+          for (const fragment of value as ToolCallDelta[]) {
+            const at = fragment.index ?? calls.length;
+            const call = (calls[at] ??= { id: "", type: "function", function: { name: "", arguments: "" } });
+            if (fragment.id) call.id = fragment.id;
+            if (fragment.type) call.type = fragment.type;
+            if (fragment.function?.name) call.function!.name += fragment.function.name;
+            if (fragment.function?.arguments) call.function!.arguments += fragment.function.arguments;
+            chars += JSON.stringify(fragment).length;
+          }
+        } else if (typeof value === "string") {
+          // content, reasoning, reasoning_content, refusal: whatever text fields the provider streams.
+          choice.message[field] = ((choice.message[field] as string | null) ?? "") + value;
+          chars += value.length;
+        }
+      }
+    }
+  };
+
+  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += value;
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      scan(buffer.slice(0, nl).replace(/\r$/, ""));
+      buffer = buffer.slice(nl + 1);
+    }
+  }
+  if (buffer) scan(buffer);
+
+  const list = [...choices.values()].sort((a, b) => a.index - b.index);
+  for (const choice of list) {
+    if (choice.message.tool_calls) choice.message.tool_calls = choice.message.tool_calls.filter(Boolean);
+  }
+  const answered = list.some((c) => c.message.content || c.message.tool_calls?.length);
+  return {
+    completion: {
+      id: meta.id ?? `chatcmpl-${crypto.randomUUID()}`,
+      object: "chat.completion",
+      created: meta.created ?? Math.floor(Date.now() / 1000),
+      model: meta.model,
+      ...(meta.system_fingerprint ? { system_fingerprint: meta.system_fingerprint } : {}),
+      choices: list,
+      ...(usage ? { usage } : {}),
+    },
+    usage,
+    chars,
+    error: error !== undefined && !answered ? error : undefined,
+  };
 }
 
 function hasImages(messages: { content: unknown }[]): boolean {

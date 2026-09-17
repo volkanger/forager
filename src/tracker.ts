@@ -56,6 +56,7 @@ export interface Route {
   directUrl: string;
   headers?: Record<string, string>;
   streamUsage: boolean;
+  forceStream: boolean;
   timeoutMs?: number;
   /** Copied from the provider: bill `prompt_tokens - cached_tokens` instead of the full prompt. */
   cachedTokensFree?: boolean;
@@ -324,6 +325,7 @@ export class Tracker extends DurableObject<Env> {
             directUrl: p.directUrl,
             headers: p.headers,
             streamUsage: !!p.streamUsage,
+            forceStream: !!p.forceStream,
             timeoutMs: p.timeoutMs,
             cachedTokensFree: p.cachedTokensFree || this.cachedFreeProviders().has(p.id),
             price: m.price,

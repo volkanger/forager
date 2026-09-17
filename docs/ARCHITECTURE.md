@@ -68,11 +68,12 @@ landing ─── /api/* ──────►           ▼                 ▼
    - **Through AI Gateway** when the provider has a `gateway` route and the account ID resolved: `compat` providers post to `…/compat/chat/completions` with `model: "<slug>/<id>"`; `path` providers use their own gateway path.
    - **Directly** (`directUrl`) otherwise.
    - If the gateway itself rejects a request (an `AiGatewayError` body), the Worker retries that same model directly and bypasses the gateway for 10 minutes.
-5. **Fetch** with a timeout on response headers: the provider's `timeoutMs`, else `UPSTREAM_STREAM_TIMEOUT_MS` (15 s) for streaming requests or `UPSTREAM_TIMEOUT_MS` (30 s) for non-streaming ones, whose headers only arrive after the full answer. Streams run as long as needed after headers arrive.
+5. **Fetch** with a timeout on response headers: the provider's `timeoutMs`, else `UPSTREAM_STREAM_TIMEOUT_MS` (15 s) for streaming requests (including `forceStream` providers) or `UPSTREAM_TIMEOUT_MS` (30 s) for non-streaming ones, whose headers only arrive after the full answer. Streams run as long as needed after headers arrive.
 6. **On failure**: `failurePolicy()` decides the cooldown (table below). The Worker calls `settle()` so tokens are refunded (the request stays counted), excludes the key or model, and loops. **Fallback only happens before the first byte is sent.**
 7. **On success**:
    - Rate-limit headers that report zero remaining (`x-ratelimit-remaining-*`) become a cooldown until their reset.
    - **Non-streaming**: usage comes from `usage` in the JSON body, or is estimated from the output length.
+   - **Collected stream** (`forceStream` providers, client didn't ask to stream): the upstream call is made with `stream: true` and `collectSse()` rebuilds one `chat.completion` (text fields concatenated per choice, tool call fragments merged by index, last `usage` kept). The response carries `x-forager-collected: stream`. An error event with no answer counts as a failed attempt and fails over, since the client has received nothing yet.
    - **Streaming**: `stream_options.include_usage` is requested where supported. `tapSse()` passes bytes through untouched while parsing `data:` lines for the final `usage` block, counting output characters as a fallback.
    - **Settle**: `settle()` runs in `ctx.waitUntil()` and corrects every scope from the estimate to real usage. It still runs if the client disconnects mid-stream.
 8. **Response headers**: `x-routed-via: provider/model`, `x-forager-attempts`, `x-forager-gateway: used | bypassed | not-used`, plus `cf-aig-log-id` when the gateway logged the request.
@@ -156,7 +157,7 @@ SQLite tables (all `WITHOUT ROWID` so an upsert writes one row):
 | `directUrl`, `modelsUrl`, `headers`, `timeoutMs` | Upstream details (`{ACCOUNT_ID}` is substituted) |
 | `resetTz`, `limits` | Reset time zone, provider-level limits |
 | `modelIdPattern`, `allowUnlisted` | $0 guard regex; whether explicit unlisted model ids are allowed |
-| `keyless`, `requiresCard`, `streamUsage`, `disabled` | Behaviour flags |
+| `keyless`, `requiresCard`, `streamUsage`, `forceStream`, `disabled` | Behaviour flags |
 | `models[]` | `{id, tags, priority, context, price, limits, noAuto, disabled}` |
 
 - **Runtime override without redeploying:** `GET /admin/catalog` → edit → `PUT /admin/catalog` (validated by `validateCatalog()`), or `DELETE` to go back to the default.
