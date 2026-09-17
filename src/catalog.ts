@@ -26,6 +26,11 @@ export interface ModelDef {
   tags?: string[];
   /** Higher is tried first by `auto`. */
   priority?: number;
+  /**
+   * Replaces `priority` for requests that contain images. Lets a model that is fast at vision go
+   * first for photos without also taking over text traffic, where its plain `priority` applies.
+   */
+  visionPriority?: number;
   /** Context window in tokens; requests that don't fit are skipped. */
   context?: number;
   /** USD per 1M tokens. Only needed where a free allowance is metered in money (e.g. Workers AI neurons). */
@@ -643,7 +648,9 @@ export const DEFAULT_CATALOG: Catalog = {
         // test PNG in 3.3 s and made a correct tool call. Strict nested json_schema (array of objects,
         // number, enum): deepseek-v4-flash and hy3 returned the exact shape; glm-5.3-flash answered in
         // markdown with and without an image, so it stays untagged.
-        { id: "z-ai/glm-5.3-flash-free", tags: ["smart", "tools", "vision", "coding"], priority: 55, context: 1_000_000 },
+        // First for images (visionPriority 95, above Gemini's 92): 3.3 s on the test PNG against Gemini's
+        // 18-21 s and its "high demand" 503s. Text keeps priority 55, since OrcaRouter's caps are unpublished.
+        { id: "z-ai/glm-5.3-flash-free", tags: ["smart", "tools", "vision", "coding"], priority: 55, visionPriority: 95, context: 1_000_000 },
         { id: "deepseek/deepseek-v4-flash-free", tags: ["smart", "tools", "coding", "structured"], priority: 53, context: 1_048_576 },
         { id: "tencent/hy3-free", tags: ["tools", "reasoning", "structured"], priority: 39, context: 262_144 },
       ],

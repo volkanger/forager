@@ -1067,6 +1067,10 @@ export class Tracker extends DurableObject<Env> {
           .filter(({ m }) => (name ? m.tags?.includes(name) : !m.noAuto))
           .sort(byPriority);
       }
+      if (!profile && input.needs.vision) {
+        const rank = (c: Candidate) => c.m.visionPriority ?? c.m.priority ?? 0;
+        candidates.sort((a, b) => rank(b) - rank(a));
+      }
       const est = input.estIn + input.estOut;
       const fitting = candidates.filter(
         ({ m }) =>

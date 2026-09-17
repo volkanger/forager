@@ -159,6 +159,7 @@ SQLite tables (all `WITHOUT ROWID` so an upsert writes one row):
 | `resetTz`, `limits` | Reset time zone, provider-level limits |
 | `modelIdPattern`, `allowUnlisted` | $0 guard regex; whether explicit unlisted model ids are allowed |
 | `keyless`, `requiresCard`, `streamUsage`, `forceStream`, `disabled` | Behaviour flags |
+| `visionPriority` (model) | Replaces `priority` when the request contains images (`auto*` without a profile), so a fast vision model can lead for photos without taking over text |
 | `models[]` | `{id, tags, priority, context, price, limits, noAuto, disabled}` |
 
 - **Runtime override without redeploying:** `GET /admin/catalog` → edit → `PUT /admin/catalog` (validated by `validateCatalog()`), or `DELETE` to go back to the default.
