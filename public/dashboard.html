@@ -113,8 +113,10 @@
   textarea { width: 100%; min-height: 80px; resize: vertical; }
   pre { background: var(--paper); border: 1px solid var(--rule); border-radius: 2px; padding: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 420px; overflow: auto; font-size: 12px; }
 
-  .key-form { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(200px, 2fr) auto; gap: 10px; margin-bottom: 14px; }
-  @media (max-width: 760px) { .key-form { grid-template-columns: 1fr; } }
+  .key-form { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(200px, 2.2fr) auto auto; gap: 10px; }
+  @media (max-width: 760px) { .key-form { grid-template-columns: 1fr 1fr; } .key-form input { grid-column: 1 / -1; } }
+  tr.key-add-row td { background: var(--paper); border-bottom: 1px solid var(--rule); padding: 10px 8px 12px; }
+  button.add-key { color: var(--rust); border-style: dashed; }
   .keychip { white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--rule); border-radius: 99px; padding: 1px 4px 1px 9px; margin: 2px 6px 2px 0; font: 12px var(--mono); background: var(--paper); }
   .keychip button { border: 0; background: transparent; padding: 0 6px; color: var(--rust); }
 
@@ -194,12 +196,6 @@
 
   <section id="provider-keys">
     <h2>Provider keys</h2>
-    <div class="key-form">
-      <select id="kprovider" aria-label="Provider"></select>
-      <input id="klabel" placeholder="Label (optional)" maxlength="60" autocomplete="off">
-      <input id="kvalue" type="password" placeholder="Paste API key" autocomplete="off">
-      <button class="primary" id="kadd">Add key</button>
-    </div>
     <p class="note" id="knote">Keys are encrypted before they're stored and never shown again, only their last 4 characters.</p>
     <div class="table-wrap" id="keys"></div>
   </section>
@@ -417,15 +413,13 @@
 
   var keyData = null;
   var testResults = {};
+  // Provider whose inline "add key" form is open, and what was typed there, so a re-render
+  // (a test finishing, a reload) doesn't close the form or wipe a half-pasted key.
+  var addingFor = null;
+  var draft = { label: "", value: "" };
 
   function renderKeys(k) {
     keyData = k;
-    var selected = $("kprovider").value;
-    $("kprovider").innerHTML = k.providers.map(function (p) {
-      var hasKey = p.secretKeys + p.stored.length > 0;
-      return '<option value="' + esc(p.id) + '">' + esc(p.name) + (p.keyless ? " (works without key)" : hasKey ? "" : " · no key") + '</option>';
-    }).join("");
-    if (selected) $("kprovider").value = selected;
     if (!k.keystoreReady) $("knote").innerHTML = '<span class="bad-text">Key storage isn\'t set up yet (KEYSTORE_SECRET secret missing), so keys can only be set with Wrangler.</span>';
     else if (k.unreadableKeys) $("knote").innerHTML = '<span class="bad-text">' + k.unreadableKeys + ' stored key(s) can\'t be decrypted (KEYSTORE_SECRET changed). Remove and re-add them.</span>';
 
@@ -436,14 +430,50 @@
       }).join("");
       if (p.secretKeys) chips = '<span class="keychip" style="padding-right:9px">' + p.secretKeys + ' from Wrangler secret</span>' + chips;
       if (!chips) chips = p.keyless ? '<span class="tags">No key needed</span>' : '<span class="tags">No key yet</span>';
+      // Keyless providers get no add button: a key can change what they bill (OVH charges keyed calls).
+      if (!p.keyless && k.keystoreReady && addingFor !== p.id) {
+        chips += ' <button class="small add-key" data-add="' + esc(p.id) + '" aria-label="Add a ' + esc(p.name) + ' key">+ Add key</button>';
+      }
       var badges = (p.requiresCard ? ' <span class="badge">card on file</span>' : '') +
         (p.signupUrl ? ' <a class="tags" href="' + esc(p.signupUrl) + '" target="_blank" rel="noopener">get a key ↗</a>' : '');
       var usable = p.keyless || p.secretKeys + p.stored.length > 0;
       var t = testResults[p.id];
       return '<tr><td class="wrap"><b>' + esc(p.name) + '</b>' + badges + '</td><td class="wrap">' + chips + '</td><td class="wrap">' +
         (t ? '<span class="' + (t.ok ? "ok-text" : "bad-text") + '">' + esc(t.text) + '</span>' : '<span class="tags">–</span>') + '</td><td>' +
-        (usable && p.testModel ? '<button class="small" data-test="' + esc(p.id) + '">Test</button>' : '') + '</td></tr>';
+        (usable && p.testModel ? '<button class="small" data-test="' + esc(p.id) + '">Test</button>' : '') + '</td></tr>' +
+        (addingFor === p.id ?
+          '<tr class="key-add-row"><td colspan="4"><div class="key-form">' +
+          '<input id="klabel" placeholder="Label (optional)" maxlength="60" autocomplete="off" value="' + esc(draft.label) + '">' +
+          '<input id="kvalue" type="password" placeholder="Paste ' + esc(p.name) + ' API key" autocomplete="off" value="' + esc(draft.value) + '">' +
+          '<button class="primary" data-save="' + esc(p.id) + '">Save key</button>' +
+          '<button data-cancel="1">Cancel</button></div></td></tr>' : '');
     }).join("") + '</table>';
+    if (addingFor && $("kvalue") && document.activeElement !== $("klabel")) $("kvalue").focus();
+  }
+
+  function openAddKey(id) {
+    addingFor = id;
+    draft = { label: "", value: "" };
+    renderKeys(keyData);
+  }
+
+  function closeAddKey() {
+    addingFor = null;
+    draft = { label: "", value: "" };
+    renderKeys(keyData);
+  }
+
+  function saveKey(provider, button) {
+    var value = draft.value.trim();
+    if (!value) { $("kvalue").focus(); return; }
+    button.disabled = true;
+    api("/admin/keys", { method: "POST", body: JSON.stringify({ provider: provider, key: value, label: draft.label }) })
+      .then(function () {
+        addingFor = null;
+        draft = { label: "", value: "" };
+        return loadKeys().then(function () { testProvider(provider); });
+      })
+      .catch(function (e) { button.disabled = false; alert(e.message); });
   }
 
   function loadKeys() {
@@ -470,6 +500,11 @@
   $("keys").addEventListener("click", function (ev) {
     var del = ev.target.closest("[data-del]");
     var test = ev.target.closest("[data-test]");
+    var add = ev.target.closest("[data-add]");
+    var save = ev.target.closest("[data-save]");
+    if (add) return openAddKey(add.getAttribute("data-add"));
+    if (save) return saveKey(save.getAttribute("data-save"), save);
+    if (ev.target.closest("[data-cancel]")) return closeAddKey();
     if (del && confirm('Remove key "' + del.getAttribute("data-name") + '"? Requests stop using it right away.')) {
       api("/admin/keys/" + encodeURIComponent(del.getAttribute("data-del")), { method: "DELETE" }).then(loadKeys).then(load)
         .catch(function (e) { alert(e.message); });
@@ -477,19 +512,16 @@
     if (test) testProvider(test.getAttribute("data-test"));
   });
 
-  $("kadd").onclick = function () {
-    var provider = $("kprovider").value;
-    var value = $("kvalue").value.trim();
-    if (!value) { $("kvalue").focus(); return; }
-    $("kadd").disabled = true;
-    api("/admin/keys", { method: "POST", body: JSON.stringify({ provider: provider, key: value, label: $("klabel").value }) })
-      .then(function () {
-        $("kvalue").value = ""; $("klabel").value = "";
-        return loadKeys().then(function () { testProvider(provider); });
-      })
-      .catch(function (e) { alert(e.message); })
-      .then(function () { $("kadd").disabled = false; });
-  };
+  $("keys").addEventListener("input", function (ev) {
+    if (ev.target.id === "klabel") draft.label = ev.target.value;
+    if (ev.target.id === "kvalue") draft.value = ev.target.value;
+  });
+
+  $("keys").addEventListener("keydown", function (ev) {
+    if (!addingFor || !ev.target.closest(".key-form")) return;
+    if (ev.key === "Escape") closeAddKey();
+    if (ev.key === "Enter" || ev.keyCode === 13) { ev.preventDefault(); saveKey(addingFor, $("keys").querySelector("[data-save]")); }
+  });
 
   function loadInterest() {
     if (!key) return;
