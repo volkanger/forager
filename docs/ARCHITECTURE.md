@@ -32,7 +32,7 @@ landing ─── /api/* ──────►           ▼                 ▼
 | File | Responsibility |
 |---|---|
 | `src/index.ts` | HTTP routes, auth, the chat proxy loop with failover, SSE usage tap, failure policy, waitlist and event endpoints |
-| `src/tracker.ts` | Durable Object: routing decisions, quota counters, cooldowns, stats, catalog overrides, encrypted provider keys, router API keys, waitlist, GitHub interest sync |
+| `src/tracker.ts` | Durable Object: routing decisions, quota counters, cooldowns, stats, request history, catalog overrides, encrypted provider keys, router API keys, waitlist, GitHub interest sync |
 | `src/catalog.ts` | Types and the default provider/model catalog with free-tier limits; catalog validation |
 | `src/cycles.ts` | Quota cycle ids (minute, hour, day, month) and reset times, per time zone |
 | `src/keystore.ts` | AES-256-GCM seal/unseal, key import, random hex, SHA-256 helpers |
@@ -77,6 +77,7 @@ landing ─── /api/* ──────►           ▼                 ▼
    - **Disguised errors**: a non-streamed (or collected) 200 whose body carries `oai-proxy-error` is a reseller's reverse proxy reporting an upstream failure as the answer. `disguisedError()` turns it into a failed attempt (model cooldown 1 h) and the loop fails over. Client-streamed bodies aren't checked, since their bytes are already on the way.
    - **Streaming**: `stream_options.include_usage` is requested where supported. `tapSse()` passes bytes through untouched while parsing `data:` lines for the final `usage` block, counting output characters as a fallback.
    - **Settle**: `settle()` runs in `ctx.waitUntil()` and corrects every scope from the estimate to real usage. It still runs if the client disconnects mid-stream.
+   - **History**: the answering attempt's `settle()` carries the request log entry (`log`), so the history row costs no extra Durable Object call. Requests that end without an answer (every candidate failed, nothing acquirable, a pinned model's 4xx passed through) are logged with `logRequest()` instead. See [Request history](#request-history).
 8. **Response headers**: `x-routed-via: provider/model`, `x-forager-attempts`, `x-forager-gateway: used | bypassed | not-used`, plus `cf-aig-log-id` when the gateway logged the request.
 
 ### Failure policy
@@ -110,7 +111,7 @@ Details:
 
 ## Durable Object data model
 
-SQLite tables (all `WITHOUT ROWID` so an upsert writes one row):
+SQLite tables (all `WITHOUT ROWID` so an upsert writes one row, except the append-only `requests`):
 
 | Table | Contents |
 |---|---|
@@ -118,13 +119,14 @@ SQLite tables (all `WITHOUT ROWID` so an upsert writes one row):
 | `cooldowns (id, until, reason)` | Active pauses |
 | `strikes (id, count, at)` | Repeat timeouts/5xx per model, for escalating cooldowns; cleared by a success or after an hour |
 | `stats (day, provider, model, requests, ok, tok_in, tok_out, usd, latency_ms)` | Daily per-model stats (kept 90 days) |
+| `requests (ts, caller, requested, routed, status, ok, attempts, stream, tok_in, tok_out, tok_cached, latency_ms, error, trail)` | Request history, indexed on `ts` (kept 30 days, at most 20,000 rows) |
 | `provider_keys (id, provider, label, last4, ciphertext, iv, created_at)` | Provider keys added in the dashboard, AES-256-GCM sealed |
 | `waitlist (email, created_at, source)` | Hosted-beta signups |
 | `events (day, name, count)` | Anonymous landing-page click counts |
 | `github_daily (day, stars, watchers, forks, views, view_uniques, clones, clone_uniques, poll_votes)` | GitHub interest history |
 | `kv (k, v)` | `catalog` (runtime override), `openrouter_free` (synced list), `router_keys` (hashed API keys), `first_seen`, `keystore_key` (generated encryption key), `github_synced_at`, `github_referrers`, `github_poll` |
 
-**Write budget:** the free plan allows 100k rows written/day. Counters and stats live in memory and are flushed by an alarm 2 s after the first change (`scheduleFlush()` → `alarm()` → `flush()`), so bursts of requests collapse into a few writes. Cooldowns, keys and waitlist rows are written immediately.
+**Write budget:** the free plan allows 100k rows written/day. Counters, stats and request-history rows live in memory and are flushed by an alarm 2 s after the first change (`scheduleFlush()` → `alarm()` → `flush()`), so bursts of requests collapse into a few writes. Cooldowns, keys and waitlist rows are written immediately.
 
 **On startup** (`blockConcurrencyWhile`), the constructor creates tables, loads counters, cooldowns, catalog, OpenRouter list and router keys, resolves the account ID, imports the encryption key and decrypts stored provider keys into memory.
 
@@ -196,7 +198,7 @@ Ids are computed when the Durable Object starts (secret keys for the current and
 
 The cron `17 3 * * *` runs `Tracker.maintenance()`:
 - Flush pending writes.
-- Prune stats older than 90 days and expired cooldowns.
+- Prune stats older than 90 days, request history older than 30 days (and past 20,000 rows), and expired cooldowns.
 - Sync OpenRouter's free models.
 - When `GITHUB_REPO` is set, save GitHub stars, watchers, forks, 14-day views/clones, referrers and poll votes (traffic and poll need `GITHUB_TOKEN`).
 
@@ -213,9 +215,17 @@ The cron `17 3 * * *` runs `Tracker.maintenance()`:
 
 Rows live in the `chats` table, keyed by `(owner, id)` where `owner` is the SHA-256 of the API key — one key never sees another's chats. Daily maintenance drops anything older than 90 days. Without the var the routes 404 and nothing is stored, so a plain deploy never holds anyone's conversations.
 
+## Request history
+
+Every `/v1/chat/completions` call that parses becomes one `requests` row: start time, `caller` (SHA-256 of the API key used), the model asked for, the `provider/model` that answered (null if none did), final status, attempt count, streaming flag, tokens, total duration (to the end of the stream for streams), the final error, and `trail`: the failed attempts before the answer as `{route, status, error}` with errors cut to 200 characters. **No message content is stored.** Provider error excerpts can occasionally quote a fragment of the request; that's the only way content reaches the table.
+
+`GET /admin/requests` (admin auth) returns the newest rows first. Query parameters: `key` (a router key id, or `secret` for `PROXY_API_KEY`), `status=ok|error`, `model` (substring of the requested or routed model), `limit` (≤ 200, default 50) and `before` (the `cursor` of the last row shown, `<ts>_<rowid>`). Callers are matched to router key labels at read time, so a revoked key's rows show as "revoked key" (or as the secret when one is set). The dashboard's Requests section uses it with filters, paging and a per-row trail view; it refreshes every 20 s until you page back.
+
+Rows are ordered by `ts` rather than rowid because they're written when a request ends: a slow stream lands after later requests. The `ts` index keeps a page at ~50 rows read; filters that match rarely can scan more of the table.
+
 ## Cost model (Cloudflare side)
 
-- **Per chat request:** about 1 Worker request + 2 Durable Object requests (acquire, settle), plus more on retries.
+- **Per chat request:** about 1 Worker request + 2 Durable Object requests (acquire, settle), plus more on retries. Request history adds 2 rows written (row + `ts` index) and, for requests that fail everywhere, one more Durable Object call.
 - **Durable Object duration is small:** the Durable Object isn't called while the upstream request is in flight.
 - **Free plan:** 100k Worker and 100k Durable Object requests/day. The global cap of 30,000 requests/day (27,000 after the margin) keeps both inside it. Past a limit, the Free plan fails requests instead of billing.
 - **Workers AI** usage is capped at its free daily neurons through USD metering.

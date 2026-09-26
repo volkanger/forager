@@ -2,7 +2,7 @@ import { splitKeys } from "./catalog";
 import type { Env } from "./env";
 import { cloudflareAccount, type CloudflareAccount } from "./account";
 import { sha256Hex } from "./keystore";
-import type { Route, SettleInput, StoredChat } from "./tracker";
+import type { RequestLogInput, Route, SettleInput, StoredChat } from "./tracker";
 
 export { Tracker } from "./tracker";
 
@@ -65,6 +65,18 @@ export default {
       if (path === "/api/chats" || path.startsWith("/api/chats/")) return await chatHistory(request, env, tracker, path);
 
       if (path === "/admin/usage" && request.method === "GET") return json(await tracker.usage());
+      if (path === "/admin/requests" && request.method === "GET") {
+        const q = url.searchParams;
+        return json(
+          await tracker.requestLog({
+            key: q.get("key") ?? undefined,
+            status: q.get("status") ?? undefined,
+            model: q.get("model") ?? undefined,
+            before: q.get("before") ?? undefined,
+            limit: Number(q.get("limit")) || undefined,
+          }),
+        );
+      }
       if (path === "/admin/catalog") {
         if (request.method === "GET") return json(await tracker.getCatalog());
         if (request.method === "PUT") return json(await tracker.setCatalog(await request.json()));
@@ -257,12 +269,22 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
   const exclude: string[] = clientExclusions(request);
   const attempts: Attempt[] = [];
   let lastUpstream: { status: number; body: string; headers: Headers } | null = null;
+  // Request history entry. `attempts` is shared, so it always holds the failures so far.
+  const log: RequestLogInput = {
+    ts: Date.now(),
+    caller: await sha256Hex(bearerToken(request)),
+    requested: String(body.model ?? "auto"),
+    stream,
+    trail: attempts,
+  };
+  const logFailure = (status: number, error: string) => ctx.waitUntil(tracker.logRequest({ ...log, status, error }));
 
   for (let i = 0; i < maxAttempts; i++) {
     const acquired = await tracker.acquire({ model: body.model ?? "auto", needs, estIn, estOut, exclude });
     if ("error" in acquired) {
       if (lastUpstream && attempts.length === 1 && lastUpstream.status < 500 && lastUpstream.status !== 429) {
         // Single explicit model failed with a client error: pass the provider's answer through.
+        logFailure(lastUpstream.status, attempts[0].error);
         return new Response(lastUpstream.body, { status: lastUpstream.status, headers: { ...CORS, "content-type": "application/json" } });
       }
       const headers: Record<string, string> = {};
@@ -272,6 +294,7 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
       // for hours instead of failing. Cap the header and report the real wait in the body.
       if (acquired.retryAfter) headers["retry-after"] = String(Math.min(acquired.retryAfter, MAX_RETRY_AFTER));
       const status = attempts.length ? 502 : acquired.status;
+      logFailure(status, acquired.error);
       const extra: Record<string, unknown> = { attempts, blocked: acquired.blocked };
       if (acquired.retryAfter) extra.retry_after_seconds = acquired.retryAfter;
       return apiError(status, acquired.error, status === 502 ? "upstream_error" : undefined, extra, headers);
@@ -362,6 +385,7 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
         cooldownMs: learned,
         cooldownScope: "route",
         reason: "provider reported quota exhausted",
+        log,
       } satisfies SettleInput);
 
     const contentType = res.headers.get("content-type") ?? "";
@@ -435,6 +459,7 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     return new Response(text, { status: res.status, headers: { ...outHeaders, "content-type": contentType || "application/json" } });
   }
 
+  logFailure(502, `Gave up after ${maxAttempts} attempts.`);
   return apiError(502, `Gave up after ${maxAttempts} attempts.`, "upstream_error", { attempts });
 }
 

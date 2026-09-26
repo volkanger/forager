@@ -144,7 +144,8 @@
     table.stack td:empty { display: none; }
     table.stack td.wrap { display: block; text-align: left; }
     table.stack td.wrap[data-label]::before { display: block; }
-    table.stack tr.key-add-row { padding: 0; }
+    table.stack tr.key-add-row, table.stack tr.rq-detail { padding: 0; }
+    table.stack tr.rq-detail td { display: block; text-align: left; }
     table.stack tr.key-add-row td { display: block; padding: 10px 8px 12px; }
   }
 
@@ -160,6 +161,15 @@
   button.add-key { color: var(--rust); border-style: dashed; }
   .keychip { white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--rule); border-radius: 99px; padding: 1px 4px 1px 9px; margin: 2px 6px 2px 0; font: 12px var(--mono); background: var(--paper); }
   .keychip button { border: 0; background: transparent; padding: 0 6px; color: var(--rust); }
+
+  /* request history */
+  .filters select, .filters input { flex: 1 1 150px; min-width: 0; }
+  #requests tr.rq { cursor: pointer; }
+  #requests tr.rq:hover td { background: var(--paper); }
+  #requests tr.rq-detail td { background: var(--paper); white-space: normal; padding: 10px 12px; }
+  .trail { margin: 0; padding: 0; list-style: none; font: 12px/1.6 var(--mono); }
+  .trail li { overflow-wrap: anywhere; }
+  #rq-more { margin-top: 12px; }
 
   /* first-run setup */
   #setup { border-color: var(--ink); }
@@ -181,6 +191,7 @@
     <a href="#providers-section">Providers &amp; quotas</a>
     <a href="#cooldowns-section">Cooldowns</a>
     <a href="#models-section">Today by model</a>
+    <a href="#requests-section">Requests</a>
     <div class="label">Tools</div>
     <a href="#playground">Playground</a>
     <a href="#interest">Interest</a>
@@ -256,6 +267,18 @@
   <section id="models-section">
     <h2>Today by model</h2>
     <div class="table-wrap" id="models"></div>
+  </section>
+
+  <section id="requests-section">
+    <h2>Requests</h2>
+    <p class="note">Every API call from the last 30 days: which key sent it, which model answered and what failed on the way. Message content is never stored. Tap a row for the full route.</p>
+    <div class="play-row filters" style="margin-bottom:12px">
+      <select id="rq-key" aria-label="API key"><option value="">All keys</option></select>
+      <select id="rq-status" aria-label="Result"><option value="">All results</option><option value="ok">Succeeded</option><option value="error">Failed</option></select>
+      <input id="rq-model" placeholder="Model contains…" autocomplete="off" aria-label="Model contains">
+    </div>
+    <div class="table-wrap" id="requests"><p class="empty">Enter your Forager API key above to load requests.</p></div>
+    <button id="rq-more" hidden>Load older</button>
   </section>
 
   <section id="playground">
@@ -440,7 +463,7 @@
   $("setup-continue").onclick = function () {
     $("setup").hidden = true; $("setup-key").value = "";
     document.body.classList.remove("setup-mode");
-    load(); loadKeys(); loadWaitlist(); loadInterest(); loadRouterKeys();
+    load(); loadKeys(); loadWaitlist(); loadInterest(); loadRouterKeys(); loadRequests(false);
   };
 
   function loadRouterKeys() {
@@ -468,6 +491,59 @@
     if (!b || !confirm('Revoke "' + b.getAttribute("data-name") + '"? Apps using it stop working within a minute.')) return;
     api("/admin/router-keys/" + encodeURIComponent(b.getAttribute("data-rk-del")), { method: "DELETE" }).then(loadRouterKeys).catch(function (e) { alert(e.message); });
   });
+
+  // ---------- request history
+  var rqRows = [], rqOpen = {}, rqPaged = false, rqTimer = null;
+  function when(ts) {
+    var d = new Date(ts);
+    return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString() : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  function secs(ms) { return ms < 1000 ? ms + " ms" : (ms / 1000).toFixed(1) + " s"; }
+  function renderRequests() {
+    if (!rqRows.length) { $("requests").innerHTML = '<p class="empty">No requests match.</p>'; return; }
+    $("requests").innerHTML = '<table><tr><th>Time</th><th>Key</th><th>Model</th><th>Result</th><th class="num">Tries</th><th class="num">Tokens in → out</th><th class="num">Took</th></tr>' +
+      rqRows.map(function (q) {
+        var model = q.routed ? '<code>' + esc(q.routed) + '</code>' + (q.requested !== q.routed ? ' <span class="tags">asked ' + esc(q.requested) + '</span>' : '')
+          : '<code>' + esc(q.requested) + '</code>';
+        var result = q.ok ? '<span class="ok-text">✓ ' + q.status + '</span>' : '<span class="bad-text">✕ ' + q.status + '</span>';
+        var row = '<tr class="rq" data-rq="' + q.id + '"><td>' + esc(when(q.ts)) + '</td><td>' + esc(q.key.label) + '</td><td class="wrap">' + model + '</td><td>' + result +
+          '</td><td class="num">' + q.attempts + '</td><td class="num"><span>' + (q.ok ? fmt(q.tok_in) + ' → ' + fmt(q.tok_out) + (q.tok_cached ? ' <span class="tags">' + fmt(q.tok_cached) + ' cached</span>' : '') : '–') +
+          '</span></td><td class="num"><span>' + secs(q.latency_ms) + (q.stream ? ' <span class="tags">stream</span>' : '') + '</span></td></tr>';
+        if (rqOpen[q.id]) {
+          var steps = q.trail.map(function (a) { return '<li class="bad-text">✕ ' + esc(a.route) + ' → ' + a.status + (a.error ? ': ' + esc(a.error) : '') + '</li>'; });
+          if (q.routed) steps.push('<li class="ok-text">✓ ' + esc(q.routed) + ' → ' + q.status + '</li>');
+          if (q.error) steps.push('<li class="bad-text">' + esc(q.error) + '</li>');
+          row += '<tr class="rq-detail"><td colspan="7"><ul class="trail">' + (steps.join("") || '<li class="tags">No attempts.</li>') + '</ul></td></tr>';
+        }
+        return row;
+      }).join("") + '</table>';
+    stackTable($("requests"));
+  }
+  function loadRequests(older) {
+    if (!key) return;
+    var params = new URLSearchParams({ limit: "50" });
+    ["key", "status", "model"].forEach(function (f) { var v = $("rq-" + f).value.trim(); if (v) params.set(f, v); });
+    if (older && rqRows.length) params.set("before", rqRows[rqRows.length - 1].cursor);
+    api("/admin/requests?" + params).then(function (r) {
+      var sel = $("rq-key"), current = sel.value;
+      sel.innerHTML = '<option value="">All keys</option>' + r.body.keys.map(function (k) { return '<option value="' + esc(k.id) + '">' + esc(k.label) + '</option>'; }).join("");
+      sel.value = current;
+      rqRows = older ? rqRows.concat(r.body.requests) : r.body.requests;
+      rqPaged = !!older;
+      $("rq-more").hidden = !r.body.more;
+      renderRequests();
+    }).catch(function (e) { $("requests").innerHTML = '<p class="bad-text">' + esc(e.message) + '</p>'; });
+  }
+  $("requests").addEventListener("click", function (ev) {
+    var tr = ev.target.closest("tr.rq");
+    if (!tr) return;
+    var id = tr.getAttribute("data-rq");
+    if (rqOpen[id]) delete rqOpen[id]; else rqOpen[id] = true;
+    renderRequests();
+  });
+  $("rq-key").onchange = $("rq-status").onchange = function () { loadRequests(false); };
+  $("rq-model").oninput = function () { clearTimeout(rqTimer); rqTimer = setTimeout(function () { loadRequests(false); }, 350); };
+  $("rq-more").onclick = function () { loadRequests(true); };
 
   var keyData = null;
   var testResults = {};
@@ -662,6 +738,7 @@
     loadWaitlist();
     loadInterest();
     loadRouterKeys();
+    loadRequests(false);
   };
   function drawer(open) {
     $("side").classList.toggle("open", open);
@@ -675,7 +752,7 @@
   document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") drawer(false); });
   // On phones the key field folds away once connected; "Key" brings it back.
   $("change-key").onclick = function () { document.body.classList.toggle("editing-key"); if (document.body.classList.contains("editing-key")) $("key").focus(); };
-  $("refresh").onclick = function () { load(); loadKeys(); loadWaitlist(); loadInterest(); loadRouterKeys(); };
+  $("refresh").onclick = function () { load(); loadKeys(); loadWaitlist(); loadInterest(); loadRouterKeys(); loadRequests(false); };
 
   $("send").onclick = function () {
     $("reply").textContent = "…";
@@ -686,8 +763,8 @@
       var msg = r.body.choices && r.body.choices[0] && r.body.choices[0].message;
       $("reply").textContent = "via " + r.headers.get("x-routed-via") + " (attempt " + r.headers.get("x-forager-attempts") + ")\n\n" +
         ((msg && msg.content) || JSON.stringify(r.body, null, 2));
-      load();
-    }).catch(function (e) { $("reply").textContent = e.message; load(); });
+      load(); loadRequests(false);
+    }).catch(function (e) { $("reply").textContent = e.message; load(); loadRequests(false); });
   };
 
   function admin(path, method, body) {
@@ -708,7 +785,9 @@
   loadWaitlist();
   loadInterest();
   loadRouterKeys();
-  setInterval(load, 20000);
+  loadRequests(false);
+  // Live refresh leaves the history alone once you've paged back into older requests.
+  setInterval(function () { load(); if (!rqPaged) loadRequests(false); }, 20000);
 })();
 </script>
 </body>

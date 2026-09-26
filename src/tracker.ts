@@ -89,7 +89,41 @@ export interface SettleInput {
   reason?: string;
   /** Repeat failures within an hour multiply the cooldown: ×1, ×10, ×60 (30 s → 5 min → 30 min). */
   escalate?: boolean;
+  /** Set on the attempt that answers the client: the request log entry, completed with this attempt's tokens. */
+  log?: RequestLogInput;
 }
+
+/**
+ * One API request as the history shows it: who called, what they asked for, where it went and how
+ * it ended. Never any message content. `caller` is the SHA-256 of the API key used.
+ */
+export interface RequestLogInput {
+  ts: number;
+  caller: string;
+  requested: string;
+  stream: boolean;
+  status?: number;
+  error?: string;
+  /** The failed attempts before the final one: route id (provider/model#key), status, error excerpt. */
+  trail: { route: string; status: number; error: string }[];
+}
+
+type RequestLogRow = {
+  ts: number;
+  caller: string;
+  requested: string;
+  routed: string | null;
+  status: number;
+  ok: number;
+  attempts: number;
+  stream: number;
+  tok_in: number;
+  tok_out: number;
+  tok_cached: number;
+  latency_ms: number;
+  error: string | null;
+  trail: string;
+};
 
 interface StatDelta {
   day: string;
@@ -151,6 +185,9 @@ interface Candidate {
 }
 
 const FLUSH_DELAY_MS = 2_000;
+/** Request history keeps 30 days, and at most this many rows, so it stays inside the free storage and row-write allowance. */
+const REQUEST_LOG_DAYS = 30;
+const REQUEST_LOG_MAX_ROWS = 20_000;
 
 /**
  * Single global Durable Object: the source of truth for quota counters, cooldowns,
@@ -165,6 +202,7 @@ export class Tracker extends DurableObject<Env> {
   private cooldowns = new Map<string, { until: number; reason: string }>();
   private dirty = new Set<string>();
   private pendingStats = new Map<string, StatDelta>();
+  private pendingLogs: RequestLogRow[] = [];
   private roundRobin = new Map<string, number>();
   private flushScheduled = false;
   private master: CryptoKey | null = null;
@@ -212,6 +250,14 @@ export class Tracker extends DurableObject<Env> {
         owner TEXT NOT NULL, id TEXT NOT NULL, updated_at INTEGER NOT NULL,
         title TEXT NOT NULL, model TEXT NOT NULL, data TEXT NOT NULL,
         PRIMARY KEY (owner, id)) WITHOUT ROWID`);
+      // Request history: metadata only, written in the batched flush. Rows land when a request ends, so order by `ts` (its start).
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS requests (
+        ts INTEGER NOT NULL, caller TEXT NOT NULL, requested TEXT NOT NULL, routed TEXT,
+        status INTEGER NOT NULL, ok INTEGER NOT NULL, attempts INTEGER NOT NULL, stream INTEGER NOT NULL,
+        tok_in INTEGER NOT NULL, tok_out INTEGER NOT NULL, tok_cached INTEGER NOT NULL,
+        latency_ms INTEGER NOT NULL, error TEXT, trail TEXT NOT NULL)`);
+      // Newest-first pages read ~50 rows through this index instead of scanning the table.
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS requests_ts ON requests (ts)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS provider_keys (
         id TEXT PRIMARY KEY, provider TEXT NOT NULL, label TEXT NOT NULL, last4 TEXT NOT NULL,
         ciphertext TEXT NOT NULL, iv TEXT NOT NULL, created_at INTEGER NOT NULL) WITHOUT ROWID`);
@@ -429,7 +475,100 @@ export class Tracker extends DurableObject<Env> {
     st.usd += usd;
     st.latencyMs += Math.round(s.latencyMs);
     this.pendingStats.set(key, st);
+    if (s.log) {
+      this.queueLog(s.log, { routed: `${r.provider}/${r.model}`, status: s.status, ok: s.ok, inTok, outTok, cachedTok, now });
+    }
     this.scheduleFlush();
+  }
+
+  /** Logs a request that ended without an answer from any model (settle() logs the ones that got one). */
+  logRequest(log: RequestLogInput): void {
+    this.queueLog(log, { routed: null, status: log.status ?? 502, ok: false, inTok: 0, outTok: 0, cachedTok: 0, now: Date.now() });
+    this.scheduleFlush();
+  }
+
+  private queueLog(
+    log: RequestLogInput,
+    end: { routed: string | null; status: number; ok: boolean; inTok: number; outTok: number; cachedTok: number; now: number },
+  ): void {
+    const trail = log.trail.slice(0, 12).map((a) => ({ route: a.route, status: a.status, error: a.error.slice(0, 200) }));
+    this.pendingLogs.push({
+      ts: log.ts,
+      caller: log.caller,
+      requested: log.requested.slice(0, 200),
+      routed: end.routed,
+      status: end.status,
+      ok: end.ok ? 1 : 0,
+      attempts: log.trail.length + (end.routed ? 1 : 0),
+      stream: log.stream ? 1 : 0,
+      tok_in: end.inTok,
+      tok_out: end.outTok,
+      tok_cached: end.cachedTok,
+      latency_ms: Math.max(0, end.now - log.ts),
+      error: log.error ? log.error.slice(0, 300) : null,
+      trail: JSON.stringify(trail),
+    });
+  }
+
+  /**
+   * Request history, newest first. `before` is the cursor of the last row already shown. Filters:
+   * `key` = a router key id or "secret", `status` = ok | error, `model` = substring of requested or routed model.
+   */
+  requestLog(q: { key?: string; status?: string; model?: string; before?: string; limit?: number }) {
+    this.flush();
+    const where: string[] = [];
+    const args: SqlStorageValue[] = [];
+    const [beforeTs, beforeId] = (q.before ?? "").split("_").map(Number);
+    if (beforeTs && beforeId) {
+      where.push("(ts < ? OR (ts = ? AND rowid < ?))");
+      args.push(beforeTs, beforeTs, beforeId);
+    }
+    if (q.key) {
+      const hash = q.key === "secret" ? null : this.routerKeys.find((k) => k.id === q.key)?.hash;
+      if (hash) {
+        where.push("caller = ?");
+        args.push(hash);
+      } else if (q.key === "secret") {
+        const hashes = this.routerKeys.map((k) => k.hash);
+        where.push(`caller NOT IN (${hashes.map(() => "?").join(", ") || "''"})`);
+        args.push(...hashes);
+      } else {
+        where.push("0");
+      }
+    }
+    if (q.status === "ok") where.push("ok = 1");
+    if (q.status === "error") where.push("ok = 0");
+    if (q.model) {
+      where.push("(instr(requested, ?) > 0 OR instr(ifnull(routed, ''), ?) > 0)");
+      args.push(q.model, q.model);
+    }
+    const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
+    const rows = this.sql
+      .exec<RequestLogRow & { id: number }>(
+        `SELECT rowid AS id, * FROM requests ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY ts DESC, rowid DESC LIMIT ?`,
+        ...args,
+        limit + 1,
+      )
+      .toArray();
+    const more = rows.length > limit;
+    const labels = new Map(this.routerKeys.map((k) => [k.hash, { id: k.id, label: k.label }]));
+    return {
+      retentionDays: REQUEST_LOG_DAYS,
+      keys: [
+        ...(this.env.PROXY_API_KEY ? [{ id: "secret", label: "PROXY_API_KEY secret" }] : []),
+        ...this.routerKeys.map((k) => ({ id: k.id, label: k.label })),
+      ],
+      more,
+      requests: rows.slice(0, limit).map(({ caller, trail, ok, stream, ...row }) => ({
+        ...row,
+        cursor: `${row.ts}_${row.id}`,
+        ok: ok === 1,
+        stream: stream === 1,
+        // A caller that isn't a current router key is the secret key, or a key that was revoked since.
+        key: labels.get(caller) ?? (this.env.PROXY_API_KEY ? { id: "secret", label: "PROXY_API_KEY secret" } : { id: null, label: "revoked key" }),
+        trail: JSON.parse(trail) as RequestLogInput["trail"],
+      })),
+    };
   }
 
   listModels(): { id: string; owned_by: string; tags: string[] }[] {
@@ -1041,6 +1180,8 @@ export class Tracker extends DurableObject<Env> {
     this.sql.exec(`DELETE FROM cooldowns WHERE until < ?`, Date.now());
     this.sql.exec(`DELETE FROM strikes WHERE at < ?`, Date.now() - 3_600_000);
     this.sql.exec(`DELETE FROM chats WHERE updated_at < ?`, Date.now() - 90 * 86_400_000);
+    this.sql.exec(`DELETE FROM requests WHERE ts < ?`, Date.now() - REQUEST_LOG_DAYS * 86_400_000);
+    this.sql.exec(`DELETE FROM requests WHERE rowid <= (SELECT MAX(rowid) FROM requests) - ?`, REQUEST_LOG_MAX_ROWS);
     await this.syncOpenRouter().catch((e) => console.error("openrouter sync failed", e));
     await this.syncGitHub().catch((e) => console.error("github sync failed", e));
   }
@@ -1271,6 +1412,14 @@ export class Tracker extends DurableObject<Env> {
       );
     }
     this.pendingStats.clear();
+    for (const l of this.pendingLogs) {
+      this.sql.exec(
+        `INSERT INTO requests (ts, caller, requested, routed, status, ok, attempts, stream, tok_in, tok_out, tok_cached, latency_ms, error, trail)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        l.ts, l.caller, l.requested, l.routed, l.status, l.ok, l.attempts, l.stream, l.tok_in, l.tok_out, l.tok_cached, l.latency_ms, l.error, l.trail,
+      );
+    }
+    this.pendingLogs = [];
   }
 
   /** Provider ids from the CACHED_TOKENS_FREE var, for trying the discount without a catalog change. */
