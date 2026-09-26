@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f3ede0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141c17" media="(prefers-color-scheme: dark)">
 <title>Forager · Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,15 +48,40 @@
   header h1 { font: 400 22px/1 var(--display); margin: 0; }
   header #status { margin-right: auto; }
   header #key { width: 240px; }
-  @media (max-width: 860px) { header #status { order: 9; flex-basis: 100%; margin: 0; } header #key { flex: 1; width: auto; min-width: 140px; } }
-  .menu-toggle { display: none; }
+  .menu-toggle, #change-key, .scrim { display: none; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; }
+
+  /* phones and narrow tablets: the sidebar becomes a drawer, the header wraps into rows */
   @media (max-width: 860px) {
+    html { scroll-padding-top: 96px; }
     .app { grid-template-columns: 1fr; }
     .side { display: none; }
-    .side.open { display: flex; position: fixed; inset: 0 25% 0 0; z-index: 10; box-shadow: 0 0 40px rgba(0,0,0,.35); }
+    .side.open { display: flex; position: fixed; top: 0; bottom: 0; left: 0; width: min(300px, 85vw); height: 100dvh; z-index: 10; box-shadow: 0 0 40px rgba(0,0,0,.35);
+      padding: max(16px, env(safe-area-inset-top)) 0 max(16px, env(safe-area-inset-bottom)) env(safe-area-inset-left); }
+    .scrim.open { display: block; position: fixed; inset: 0; z-index: 9; background: rgba(0,0,0,.35); }
+    body.drawer-open { overflow: hidden; }
+    .nav a { padding: 11px 10px; font-size: 14px; }
     .menu-toggle { display: inline-block; }
+    header { padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)); gap: 8px; }
+    header h1 { margin-right: auto; }
+    header #status { order: 9; flex-basis: 100%; margin: 0; }
+    header #key { order: 5; flex: 1 1 200px; width: auto; min-width: 0; }
+    header #save { order: 6; }
+    body.connected:not(.editing-key) header #key, body.connected:not(.editing-key) header #save { display: none; }
+    body.connected #change-key { display: inline-block; }
+    main { padding: 12px max(12px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); gap: 12px; }
+    section { padding: 16px 14px; }
+    .play-row input { min-width: 0; flex-basis: 160px; }
   }
-  main { max-width: 1180px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; }
+  /* iOS zooms into any focused field under 16px */
+  @media (max-width: 860px), (pointer: coarse) { input, textarea, select { font-size: 16px; } }
+  /* finger-sized targets */
+  @media (pointer: coarse) {
+    button { min-height: 40px; }
+    button.small { min-height: 34px; padding: 6px 12px; }
+    .keychip { padding: 2px 2px 2px 10px; }
+    .keychip button { min-width: 32px; min-height: 32px; }
+  }
 
   /* controls */
   input, textarea, button, select { font: inherit; color: inherit; }
@@ -81,7 +108,7 @@
   .stat b { display: block; font: 400 30px/1.1 var(--display); font-variant-numeric: tabular-nums; margin: 4px 0; }
   .stat small { color: var(--muted); font: 11.5px/1.4 var(--mono); }
 
-  .providers { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .providers { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 14px; }
   .prov { border: 1px solid var(--rule); border-radius: 3px; padding: 14px; background: var(--paper); }
   .prov.off { opacity: 0.55; }
   .prov h3 { margin: 0 0 6px; font: 400 18px/1.25 var(--display); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -106,6 +133,20 @@
   td.num, th.num { text-align: right; }
   td.wrap { white-space: normal; }
   td b { font: 400 15px/1.3 var(--display); }
+  /* on phones, list tables become one card per row, each cell labelled with its column (data-label, set by stackTable) */
+  @media (max-width: 640px) {
+    table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; }
+    table.stack tr:first-child { display: none; }
+    table.stack tr { padding: 8px 0; border-bottom: 1px solid var(--rule); }
+    table.stack td { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; padding: 3px 0; border: 0; white-space: normal; text-align: right; overflow-wrap: anywhere; }
+    table.stack td:first-child { text-align: left; }
+    table.stack td[data-label]::before { content: attr(data-label); flex: none; color: var(--muted); font: 500 11px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .06em; text-align: left; }
+    table.stack td:empty { display: none; }
+    table.stack td.wrap { display: block; text-align: left; }
+    table.stack td.wrap[data-label]::before { display: block; }
+    table.stack tr.key-add-row { padding: 0; }
+    table.stack tr.key-add-row td { display: block; padding: 10px 8px 12px; }
+  }
 
   .play { display: grid; gap: 10px; }
   .play-row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -148,14 +189,16 @@
   </nav>
   <div class="side-foot"><a href="/">Home</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div>
 </aside>
+<div class="scrim" id="scrim"></div>
 <div class="content">
 <header>
-  <button class="menu-toggle" id="menu" aria-label="Show navigation">☰</button>
+  <button class="menu-toggle" id="menu" aria-label="Show navigation" aria-expanded="false">☰</button>
   <h1>Dashboard</h1>
   <span id="status"></span>
   <input id="key" type="password" placeholder="Your Forager API key" autocomplete="off" size="26">
   <button class="primary" id="save">Connect</button>
   <button id="refresh">Refresh</button>
+  <button id="change-key" aria-label="Change API key">Key</button>
 </header>
 <main>
   <section id="setup" hidden>
@@ -270,6 +313,16 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  // Tags a table for the phone card layout: each cell but the first (the card title) gets its column name.
+  function stackTable(el) {
+    var t = el.querySelector("table");
+    if (!t) return;
+    t.classList.add("stack");
+    var names = Array.prototype.map.call(t.rows[0].cells, function (c) { return c.textContent; });
+    Array.prototype.slice.call(t.rows, 1).forEach(function (tr) {
+      Array.prototype.forEach.call(tr.cells, function (td, i) { if (i > 0 && names[i] && td.colSpan === 1) td.setAttribute("data-label", names[i]); });
+    });
+  }
   function fmt(n) { return Number(n || 0).toLocaleString(); }
   function money(n) { return "$" + Number(n || 0).toFixed(4); }
   function until(ts) {
@@ -334,6 +387,7 @@
           return '<tr><td>' + target + '</td><td>' + esc(c.reason) + '</td><td class="num">' + until(c.until) + '</td></tr>';
         }).join("") + '</table>'
       : '<p class="empty">Nothing cooling down.</p>';
+    stackTable($("cooldowns"));
 
     $("models").innerHTML = u.today.length
       ? '<table><tr><th>Provider</th><th>Model</th><th class="num">Requests</th><th class="num">OK</th><th class="num">Tokens in</th><th class="num">Tokens out</th><th class="num">Avg latency</th><th class="num">Metered</th></tr>' +
@@ -343,6 +397,7 @@
             ' ms</td><td class="num">' + money(r.usd) + '</td></tr>';
         }).join("") + '</table>'
       : '<p class="empty">No requests today.</p>';
+    stackTable($("models"));
 
     $("status").textContent = "Updated " + new Date(u.now).toLocaleTimeString() + (u.customCatalog ? " · custom catalog" : " · catalog " + u.catalogVersion);
   }
@@ -398,6 +453,7 @@
       });
       if (r.body.managedBySecret) rows.unshift('<tr><td>PROXY_API_KEY secret</td><td class="tags">set with Wrangler</td><td>–</td><td></td></tr>');
       $("rk-table").innerHTML = '<table><tr><th>Label</th><th>Key</th><th>Created</th><th></th></tr>' + rows.join("") + '</table>';
+      stackTable($("rk-table"));
     }).catch(function () {});
   }
   $("rk-create").onclick = function () {
@@ -450,6 +506,7 @@
           '<button class="primary" data-save="' + esc(p.id) + '">Save key</button>' +
           '<button data-cancel="1">Cancel</button></div></td></tr>' : '');
     }).join("") + '</table>';
+    stackTable($("keys"));
     if (addingFor && $("kvalue") && document.activeElement !== $("klabel")) $("kvalue").focus();
   }
 
@@ -570,6 +627,7 @@
         return '<tr><td>' + esc(e.email) + '</td><td>' + esc(new Date(e.createdAt).toLocaleString()) + '</td><td>' + esc(e.source) +
           '</td><td><button class="small" data-wl-del="' + esc(e.email) + '">Remove</button></td></tr>';
       }).join("") + '</table>';
+      stackTable($("wl-table"));
     }).catch(function () {});
   }
   $("wl-table").addEventListener("click", function (ev) {
@@ -591,20 +649,32 @@
 
   function load() {
     if (!key) return;
-    api("/admin/usage").then(function (r) { render(r.body); }).catch(function (e) { $("status").textContent = e.message; });
+    api("/admin/usage").then(function (r) { render(r.body); document.body.classList.add("connected"); })
+      .catch(function (e) { $("status").textContent = e.message; document.body.classList.remove("connected"); });
   }
 
   $("save").onclick = function () {
     key = $("key").value.trim();
     try { localStorage.setItem("forager-key", key); } catch (e) {}
+    document.body.classList.remove("editing-key");
     load();
     loadKeys();
     loadWaitlist();
     loadInterest();
     loadRouterKeys();
   };
-  $("menu").onclick = function () { $("side").classList.toggle("open"); };
-  $("nav").addEventListener("click", function (ev) { if (ev.target.closest("a")) $("side").classList.remove("open"); });
+  function drawer(open) {
+    $("side").classList.toggle("open", open);
+    $("scrim").classList.toggle("open", open);
+    document.body.classList.toggle("drawer-open", open);
+    $("menu").setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  $("menu").onclick = function () { drawer(!$("side").classList.contains("open")); };
+  $("scrim").onclick = function () { drawer(false); };
+  $("nav").addEventListener("click", function (ev) { if (ev.target.closest("a")) drawer(false); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") drawer(false); });
+  // On phones the key field folds away once connected; "Key" brings it back.
+  $("change-key").onclick = function () { document.body.classList.toggle("editing-key"); if (document.body.classList.contains("editing-key")) $("key").focus(); };
   $("refresh").onclick = function () { load(); loadKeys(); loadWaitlist(); loadInterest(); loadRouterKeys(); };
 
   $("send").onclick = function () {
