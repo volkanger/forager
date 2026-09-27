@@ -2,7 +2,7 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/volkanger/forager)
 
-**[fora.ger.soy](https://fora.ger.soy)**
+**[fora.ger.llc](https://fora.ger.llc)**
 
 Forager is an LLM router you host on your own Cloudflare account, inspired by the self-hosted
 [FreeLLMAPI](https://github.com/tashfeenahmed/freellmapi). It gives you one OpenAI-compatible
@@ -106,7 +106,7 @@ To hear about new releases, click **Watch → Custom → Releases** on the [GitH
 
 ## Chat in the browser
 
-Open `/chat` on your Forager (for example `https://fora.ger.soy/chat`) and sign in with your API key. Answers stream from whichever free tier has quota left; each reply shows the provider and model that answered. Conversations are saved only in your browser. The page is a static file, so it costs nothing beyond the API calls it makes.
+Open `/chat` on your Forager (for example `https://fora.ger.llc/chat`) and sign in with your API key. Answers stream from whichever free tier has quota left; each reply shows the provider and model that answered. Conversations are saved only in your browser (or synced across devices when the deploy sets `CHAT_HISTORY`). Add it to your phone's home screen and it opens like an app. The page is a static file, so it costs nothing beyond the API calls it makes.
 
 ## Use it
 
@@ -137,6 +137,7 @@ Send any of your API keys as a bearer token (or only `ADMIN_API_KEY`, if you set
 | Endpoint | Purpose |
 |---|---|
 | `GET /admin/usage` | Every limit per key: used, cap, reset time. Also cooldowns, today's and the last 7 days' stats |
+| `GET /admin/requests` | Request history, newest first (30 days, no message content): key, requested and answering model, result, failed attempts, tokens, duration. Filters `key`, `status=ok\|error`, `model`; paging with `limit` and `before=<cursor>` |
 | `GET /admin/catalog` | The catalog currently in use |
 | `PUT /admin/catalog` | Replace the catalog at runtime, no redeploy (checked before saving) |
 | `DELETE /admin/catalog` | Go back to the built-in catalog in `src/catalog.ts` |

@@ -43,7 +43,7 @@
   </div>
 
   <h2>Who this policy covers</h2>
-  <p>Forager is open-source software (<a href="https://github.com/volkanger/forager">github.com/volkanger/forager</a>). This policy describes how the software handles data, and applies to the instance at <b>fora.ger.soy</b>, operated by the Forager project maintainer. If you use a copy that someone else deployed on their own Cloudflare account, that person is the operator and controls the settings described below.</p>
+  <p>Forager is open-source software (<a href="https://github.com/volkanger/forager">github.com/volkanger/forager</a>). This policy describes how the software handles data, and applies to the instance at <b>fora.ger.llc</b>, operated by the Forager project maintainer. If you use a copy that someone else deployed on their own Cloudflare account, that person is the operator and controls the settings described below.</p>
 
   <h2>Requests to the API (<code>/v1</code>)</h2>
   <p>When an app sends a chat request, Forager forwards the prompt and returns the response from one of the configured AI providers (for example Groq, Google Gemini, NVIDIA, Mistral, OpenRouter, Zhipu, Kilo, LLM7, Ollama, Cohere or Cloudflare Workers AI). The response header <code>x-routed-via</code> names the provider and model used.</p>
@@ -52,7 +52,7 @@
     <li><b>It records metadata</b> needed to stay inside free quotas: provider, model, request counts, token counts, estimated cost, latency and success or failure. Daily statistics are kept for 90 days; quota counters are overwritten every cycle.</li>
     <li><b>Request history:</b> each API call is logged with its time, which of your Forager API keys sent it, the model asked for and the one that answered, the providers tried on the way (with a short excerpt of any error they returned), token counts, duration and result. Only the owner sees it, in the dashboard. It's kept for 30 days (at most 20,000 requests) and contains no prompt or response content.</li>
     <li><b>AI providers receive your prompts</b> and process them under their own terms and privacy policies. Some free tiers (including Google Gemini, Mistral and Kilo) may use prompts to improve their models. NVIDIA logs requests to its free API endpoints for security and to improve its products, and asks that nothing confidential or personal (such as images or recordings of people's faces or voices) be sent. Don't send sensitive information through free tiers.</li>
-    <li><b>Cloudflare AI Gateway:</b> requests to some providers are routed through Cloudflare AI Gateway in the operator's account. When the gateway's log collection is enabled, it stores request and response content there. On fora.ger.soy, gateway logging is currently <b>enabled</b> and limited to the most recent 100,000 requests.</li>
+    <li><b>Cloudflare AI Gateway:</b> requests to some providers are routed through Cloudflare AI Gateway in the operator's account. When the gateway's log collection is enabled, it stores request and response content there. On fora.ger.llc, gateway logging is currently <b>enabled</b> and limited to the most recent 100,000 requests.</li>
   </ul>
 
   <h2>API keys</h2>
@@ -62,7 +62,7 @@
     <li>The dashboard remembers your Forager API key in your browser's local storage so you stay signed in. It isn't sent anywhere except to this site.</li>
   </ul>
 
-  <h2>The website (fora.ger.soy)</h2>
+  <h2>The website (fora.ger.llc)</h2>
   <ul>
     <li><b>Waitlist:</b> if you join, we store your email address, the date you joined and the site you signed up from, only to email you when hosted Forager opens. It's never shared or sold. Use <b>Remove my email</b> under the form to delete it at any time.</li>
     <li><b>Click counts:</b> clicks on the Deploy, GitHub, star and poll links are counted per day as totals, with nothing that identifies you.</li>
@@ -82,7 +82,7 @@
   </ul>
 
   <h2>Changes and contact</h2>
-  <p>We'll update the date above when this policy changes. For privacy questions or requests (for example, to access or delete data about you), email <a href="mailto:fora@ger.soy">fora@ger.soy</a>. General questions are welcome at <a href="https://github.com/volkanger/forager/discussions">github.com/volkanger/forager/discussions</a>.</p>
+  <p>We'll update the date above when this policy changes. For privacy questions or requests (for example, to access or delete data about you), email <a href="mailto:fora@ger.llc">fora@ger.llc</a>. General questions are welcome at <a href="https://github.com/volkanger/forager/discussions">github.com/volkanger/forager/discussions</a>.</p>
 
   <footer><span>Forager · open source (MIT)</span><a href="/">Home</a><a href="/terms">Terms of Service</a></footer>
 </div>

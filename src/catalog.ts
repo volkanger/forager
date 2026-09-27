@@ -525,7 +525,7 @@ export const DEFAULT_CATALOG: Catalog = {
       modelsUrl: "https://api.routeway.ai/v1/models",
       resetTz: "UTC",
       // Cloudflare in front of Routeway rejects non-browser user agents (error 1010).
-      headers: { "user-agent": "Mozilla/5.0 (compatible; Forager/1.0; +https://fora.ger.soy)" },
+      headers: { "user-agent": "Mozilla/5.0 (compatible; Forager/1.0; +https://fora.ger.llc)" },
       modelIdPattern: ":free$",
       notes: "Free pool: docs say 20 req/min and 200 req/day; a live test elsewhere saw 5 req/min, so Forager assumes 5.",
       limits: [{ window: "minute", requests: 5 }, { window: "day", requests: 200 }],
