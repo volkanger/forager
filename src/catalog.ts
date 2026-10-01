@@ -403,7 +403,13 @@ export const DEFAULT_CATALOG: Catalog = {
       timeoutMs: 90_000,
       modelIdPattern: "flash",
       allowUnlisted: true,
-      notes: "Free GLM *-flash models, ~1M tokens/day each (FreeLLMAPI's figures). Slow: hidden reasoning before the answer.",
+      // Cache hits don't count against Zhipu's daily tokens. Tested 2026-10-01: 121 sequential requests to
+      // glm-4.5-flash inside one Shanghai day sent 1,201,893 prompt tokens (99% served from Zhipu's cache)
+      // with no 429, past the ~1M/day figure; Forager's discounted counter read 23,554. Concurrency is
+      // what Zhipu limits on free accounts: 4 parallel requests got 429 code 1302 ("control your request
+      // frequency"), handled by the normal 60 s route cooldown.
+      cachedTokensFree: true,
+      notes: "Free GLM *-flash models, ~1M tokens/day each (FreeLLMAPI's figures); cached prompt tokens don't count. Slow: hidden reasoning before the answer. Free accounts allow only a few requests at once.",
       models: [
         { id: "glm-4.7-flash", tags: ["tools", "reasoning", "coding"], priority: 46, context: 131_072, limits: [{ window: "day", tokens: 1_000_000 }] },
         { id: "glm-4.5-flash", tags: ["tools"], priority: 42, context: 131_072, limits: [{ window: "day", tokens: 1_000_000 }] },

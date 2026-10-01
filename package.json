@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "deploy:fora": "wrangler deploy --domain fora.ger.llc --var GITHUB_REPO:volkanger/forager --var GITHUB_POLL:2 --var CHAT_HISTORY:1 --var CACHED_TOKENS_FREE:zhipu",
+    "deploy:fora": "wrangler deploy --domain fora.ger.llc --var GITHUB_REPO:volkanger/forager --var GITHUB_POLL:2 --var CHAT_HISTORY:1",
     "typecheck": "tsc --noEmit",
     "types": "wrangler types"
   },
