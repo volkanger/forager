@@ -300,8 +300,12 @@ export const DEFAULT_CATALOG: Catalog = {
         "API Trial endpoints. NVIDIA logs requests for security and to improve its products, and asks that no confidential or personal data (such as faces or voices of people) be sent.",
       limits: [{ window: "minute", requests: 40 }],
       models: [
+        // kimi-k3 timed out 8/8 in mid-September; retested 2026-10-01 it answered 7/7 (first token 0.7-4.2 s,
+        // short and ~11k-token prompts alike), and 17/17 real requests since 2026-09-26. Stays at 86.
         { id: "moonshotai/kimi-k3", tags: ["smart", "tools", "coding"], priority: 86 },
-        { id: "deepseek-ai/deepseek-v4-flash-0731", tags: ["smart", "tools", "coding"], priority: 82 },
+        // deepseek-v4-flash-0731 was removed: NVIDIA ended it 2026-09-21 (410 "reached its end of life").
+        // Its listed successor, deepseek-ai/deepseek-v4.1-flash, timed out at 30 s on two plain requests
+        // 2026-10-01, so it stays out of auto; allowUnlisted still lets callers name it.
         // Not fast, despite the name: OpenCode's ~11k-token prompts took 36-53 s (request history,
         // 2026-09-26), and on 2026-10-01 a two-line prompt sent no first token within 15 s. Was `fast`
         // at priority 74, the first pick for auto:fast; Gemini Flash-Lite answers the same in ~1 s.
