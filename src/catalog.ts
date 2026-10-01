@@ -302,7 +302,10 @@ export const DEFAULT_CATALOG: Catalog = {
       models: [
         { id: "moonshotai/kimi-k3", tags: ["smart", "tools", "coding"], priority: 86 },
         { id: "deepseek-ai/deepseek-v4-flash-0731", tags: ["smart", "tools", "coding"], priority: 82 },
-        { id: "z-ai/glm-5.3-flash", tags: ["fast", "tools", "coding"], priority: 74 },
+        // Not fast, despite the name: OpenCode's ~11k-token prompts took 36-53 s (request history,
+        // 2026-09-26), and on 2026-10-01 a two-line prompt sent no first token within 15 s. Was `fast`
+        // at priority 74, the first pick for auto:fast; Gemini Flash-Lite answers the same in ~1 s.
+        { id: "z-ai/glm-5.3-flash", tags: ["tools", "coding"], priority: 45 },
         { id: "nvidia/nemotron-3-super-120b-a12b", tags: ["tools"], priority: 66 },
         { id: "openai/gpt-oss-20b", tags: ["fast", "tools"], priority: 58 },
         // Vision probe 2026-09-17 (a 32x32 red PNG, a 591 KB inline two-color PNG, a nested strict schema with
