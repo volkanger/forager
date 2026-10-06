@@ -60,6 +60,13 @@ export interface ProviderDef {
    * without committing the claim to the catalog, which is how an unproven provider gets tried.
    */
   cachedTokensFree?: boolean;
+  /**
+   * Safe for personal data: the provider's own terms say API prompts are not used for training,
+   * and keep them no longer than a short abuse-monitoring window. Only these providers serve
+   * `auto:private` and requests sent with `x-forager-private: 1`. Set it from a read of the
+   * current terms, with the date in `notes`; a provider that only offers an opt-out does not count.
+   */
+  private?: boolean;
   name: string;
   /** Secret holding the API key(s). Comma/newline-separate several keys. */
   keyEnv: string;
@@ -217,6 +224,8 @@ export const DEFAULT_CATALOG: Catalog = {
     },
     {
       id: "groq",
+      // Terms checked 2026-10-04: Groq may not train on inputs or outputs, keeps none by default (up to 30 days for reliability/abuse), and offers zero data retention in Data Controls.
+      private: true,
       name: "Groq",
       keyEnv: "GROQ_API_KEY",
       signupUrl: "https://console.groq.com/keys",
@@ -482,6 +491,8 @@ export const DEFAULT_CATALOG: Catalog = {
     },
     {
       id: "ollama",
+      // Terms checked 2026-10-04: no training on inputs or outputs; prompts are handled transiently and not stored after the request.
+      private: true,
       name: "Ollama Cloud (Free plan)",
       keyEnv: "OLLAMA_API_KEY",
       signupUrl: "https://ollama.com/settings/keys",
@@ -630,6 +641,8 @@ export const DEFAULT_CATALOG: Catalog = {
     },
     {
       id: "ovh",
+      // Terms checked 2026-10-04: no training on customer data and nothing stored during or after model use (product page, not the contract).
+      private: true,
       name: "OVHcloud AI Endpoints (anonymous)",
       // Never add a key: authenticated AI Endpoints calls are billed per token. Anonymous only.
       keyEnv: "OVH_AI_ENDPOINTS_KEY",
@@ -762,6 +775,8 @@ export const DEFAULT_CATALOG: Catalog = {
     },
     {
       id: "workers-ai",
+      // Terms checked 2026-10-04: Cloudflare does not train on Customer Content and stores none unless you do.
+      private: true,
       name: "Cloudflare Workers AI",
       keyEnv: "CF_API_TOKEN",
       signupUrl: "https://dash.cloudflare.com/profile/api-tokens",

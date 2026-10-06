@@ -122,6 +122,7 @@ Any OpenAI SDK works if you set `base_url` to `…/v1` and `api_key` to your For
 |---|---|
 | `auto` | Highest-priority model that has quota left, with automatic fallback |
 | `auto:<tag>` | Same, limited to a tag: `fast`, `smart`, `coding`, `tools`, `vision`, `reasoning`, `structured` |
+| `auto:private` | Same as `auto`, but only providers whose terms rule out training on API prompts and keep them briefly at most |
 | `auto:<profile>` | A fallback chain you define in order (`auto:coding` and `auto:oss120` come built in) |
 | `groq/openai/gpt-oss-120b` | Only that provider and model, rotating across its keys |
 | `gpt-oss-120b` | Every provider that serves that model id |
@@ -129,6 +130,8 @@ Any OpenAI SDK works if you set `base_url` to `…/v1` and `api_key` to your For
 Requests that use `tools` or image inputs only go to models tagged with those abilities, and only when the prompt fits the model's context window. A request with a strict `response_format: json_schema` is held to the same rule: most free models accept the field and then answer in prose or fenced markdown anyway, so only models tested against a real schema carry the `structured` tag and take those requests. Naming a model explicitly skips every one of these checks. Streaming is supported: the router asks the provider for usage data and reads it from the stream. Fallback to another model only happens before the first byte is sent.
 
 Forager retries for you when a provider is rate limited, times out or errors, but it can't tell that an answer was *wrong* — a reply that parses fine is a success as far as HTTP is concerned. Send `x-forager-exclude: provider/model, provider/model` to rule out models you've already judged unusable, so a retry lands somewhere new instead of on the same first choice. Agent frameworks that validate a model's output and retry are the main reason to want this.
+
+For personal data, use `auto:private`, or send `x-forager-private: 1` with any other `model` value (`auto:coding`, a profile, an explicit model). Either way only providers marked `private` in the catalog are tried, an explicit model at another provider gets a 403, and AI Gateway stores no prompt or response for the request (only its metadata) and skips its cache. "Private" rests on each provider's published terms, checked on the date in its catalog note; it is not an audit.
 
 ## Admin API
 

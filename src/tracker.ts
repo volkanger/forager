@@ -33,6 +33,8 @@ export interface Needs {
   vision: boolean;
   /** The request asked for a strict `json_schema` response format. */
   structured: boolean;
+  /** Personal data: only providers marked `private` may serve it (`auto:private` or `x-forager-private`). */
+  private: boolean;
 }
 
 export interface AcquireInput {
@@ -577,6 +579,7 @@ export class Tracker extends DurableObject<Env> {
     const tags = new Set<string>();
     for (const p of providers) for (const m of p.models) for (const t of m.tags ?? []) tags.add(t);
     for (const t of [...tags].sort()) out.push({ id: `auto:${t}`, owned_by: "forager", tags: [t] });
+    if (providers.some((p) => p.private)) out.push({ id: "auto:private", owned_by: "forager", tags: [] });
     for (const name of Object.keys(this.catalog.profiles ?? {})) out.push({ id: `auto:${name}`, owned_by: "forager", tags: [] });
     for (const p of providers) {
       for (const m of p.models) if (this.allowed(p, m)) out.push({ id: `${p.id}/${m.id}`, owned_by: p.id, tags: m.tags ?? [] });
@@ -1253,7 +1256,8 @@ export class Tracker extends DurableObject<Env> {
     const byPriority = (a: Candidate, b: Candidate) => (b.m.priority ?? 0) - (a.m.priority ?? 0);
 
     if (want === "auto" || want.startsWith("auto:")) {
-      const name = want.slice(5);
+      // `auto:private` is plain `auto` narrowed to private providers (input.needs.private is set too).
+      const name = want === "auto:private" ? "" : want.slice(5);
       const profile = name ? this.catalog.profiles?.[name] : undefined;
       let candidates: Candidate[];
       if (profile) {
@@ -1264,7 +1268,11 @@ export class Tracker extends DurableObject<Env> {
       } else {
         candidates = usable
           .flatMap((p) => p.models.filter((m) => this.allowed(p, m)).map((m) => ({ p, m })))
-          .filter(({ m }) => (name ? m.tags?.includes(name) : !m.noAuto))
+          // A private request may also use a `noAuto` vision model, so photos can still reach
+          // a private vision fallback such as OVH.
+          .filter(({ m }) =>
+            name ? m.tags?.includes(name) : !m.noAuto || (input.needs.private && input.needs.vision && !!m.tags?.includes("vision")),
+          )
           .sort(byPriority);
       }
       if (!profile && input.needs.vision) {
@@ -1273,7 +1281,8 @@ export class Tracker extends DurableObject<Env> {
       }
       const est = input.estIn + input.estOut;
       const fitting = candidates.filter(
-        ({ m }) =>
+        ({ p, m }) =>
+          (!input.needs.private || p.private) &&
           (!input.needs.tools || m.tags?.includes("tools")) &&
           (!input.needs.vision || m.tags?.includes("vision")) &&
           // `structured` is opt-in per model on purpose: most free models accept a json_schema
@@ -1283,7 +1292,12 @@ export class Tracker extends DurableObject<Env> {
           (!m.context || m.context >= est),
       );
       if (fitting.length === 0) {
-        const need = [input.needs.tools && "tools", input.needs.vision && "vision", input.needs.structured && "structured"]
+        const need = [
+          input.needs.private && "private",
+          input.needs.tools && "tools",
+          input.needs.vision && "vision",
+          input.needs.structured && "structured",
+        ]
           .filter(Boolean)
           .join(" + ");
         return {
@@ -1306,12 +1320,16 @@ export class Tracker extends DurableObject<Env> {
       if (!this.allowed(found.p, found.m)) {
         return { error: `Model "${want}" is blocked by the $0 guard (${provider.modelIdPattern ?? "disabled"}).`, status: 403 };
       }
+      if (input.needs.private && !provider.private) {
+        return { error: `Provider ${provider.id} is not marked private; it may log or train on prompts.`, status: 403 };
+      }
       return { candidates: [found] };
     }
 
     // Bare model id: every provider that serves it.
     const candidates = usable
       .flatMap((p) => p.models.filter((m) => this.allowed(p, m) && (m.id === want || m.id.endsWith(`/${want}`))).map((m) => ({ p, m })))
+      .filter(({ p }) => !input.needs.private || p.private)
       .sort(byPriority);
     if (candidates.length === 0) return { error: `Model "${want}" not found. GET /v1/models lists available ids.`, status: 404 };
     return { candidates };

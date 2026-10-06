@@ -56,6 +56,7 @@ landing ─── /api/* ──────►           ▼                 ▼
 3. **Acquire** (`Tracker.acquire()`), repeated up to `MAX_ATTEMPTS` (default 6):
    - **Resolve candidates** from the `model` field:
      - `auto`: every allowed model except those with `noAuto`, highest `priority` first.
+     - `auto:private`: plain `auto` limited to providers with `private: true`; a request with images may also use their `noAuto` vision models. The `x-forager-private` header applies the same provider limit to any `model` value, and an explicit model at a non-private provider is refused (403). Private requests send `cf-aig-collect-log-payload: false` and `cf-aig-skip-cache: true` to AI Gateway.
      - `auto:<tag>`: only models with that tag. `auto:<profile>`: an ordered list from `catalog.profiles`.
      - `provider/model`: exactly that model. A bare model id matches every provider that serves it.
      - For `auto*`, models missing a needed capability or with too small a context window are dropped. Needs are `tools` (the body has `tools`), `vision` (an image part) and `structured` (`response_format.type` is `json_schema`). Naming a model explicitly bypasses these checks — you asked for that model, you get it.

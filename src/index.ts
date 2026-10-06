@@ -9,7 +9,7 @@ export { Tracker } from "./tracker";
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "access-control-allow-headers": "authorization, content-type, x-api-key, x-forager-exclude",
+  "access-control-allow-headers": "authorization, content-type, x-api-key, x-forager-exclude, x-forager-private",
   "access-control-expose-headers": "x-routed-via, x-forager-attempts, x-forager-gateway, cf-aig-log-id, retry-after",
 };
 
@@ -252,6 +252,9 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     // Only strict schemas gate routing. Plain `json_object` is a hint most models honour loosely,
     // and gating on it would shrink the pool for requests that tolerate a stray prose wrapper.
     structured: body.response_format?.type === "json_schema",
+    // Personal data: `auto:private`, or the header for any other selector (`auto:coding`, a profile,
+    // an explicit model). Either way only providers marked `private` in the catalog are used.
+    private: body.model?.trim() === "auto:private" || /^(1|true|yes)$/i.test(request.headers.get("x-forager-private")?.trim() ?? ""),
   };
   const estIn = estimateTokens(JSON.stringify(body.messages)) + (needs.tools ? estimateTokens(JSON.stringify(body.tools)) : 0);
   const estOut = Math.min(Number(body.max_tokens ?? body.max_completion_tokens ?? 1024) || 1024, 4096);
@@ -313,7 +316,13 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
     if (key) headers.authorization = `Bearer ${key}`;
     if (target.viaGateway) {
       if (env.CF_AIG_TOKEN) headers["cf-aig-authorization"] = `Bearer ${env.CF_AIG_TOKEN}`;
-      if (env.GATEWAY_CACHE_TTL) headers["cf-aig-cache-ttl"] = env.GATEWAY_CACHE_TTL;
+      if (env.GATEWAY_CACHE_TTL && !needs.private) headers["cf-aig-cache-ttl"] = env.GATEWAY_CACHE_TTL;
+      // Private requests leave no prompt or response in the gateway's logs or cache. The log entry
+      // itself (model, status, tokens, duration) is kept for debugging.
+      if (needs.private) {
+        headers["cf-aig-collect-log-payload"] = "false";
+        headers["cf-aig-skip-cache"] = "true";
+      }
       headers["cf-aig-metadata"] = JSON.stringify({ route: `${route.provider}/${route.model}`, key: route.keyId });
     }
 

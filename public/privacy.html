@@ -31,7 +31,7 @@
 <div class="wrap">
   <header><a class="mark" href="/">Forager</a><a href="/terms">Terms</a><a href="/dashboard">Dashboard</a></header>
   <h1>Privacy Policy</h1>
-  <p class="updated">Effective September 26, 2026</p>
+  <p class="updated">Effective October 4, 2026</p>
 
   <div class="summary">
     <ul>
@@ -52,6 +52,7 @@
     <li><b>It records metadata</b> needed to stay inside free quotas: provider, model, request counts, token counts, estimated cost, latency and success or failure. Daily statistics are kept for 90 days; quota counters are overwritten every cycle.</li>
     <li><b>Request history:</b> each API call is logged with its time, which of your Forager API keys sent it, the model asked for and the one that answered, the providers tried on the way (with a short excerpt of any error they returned), token counts, duration and result. Only the owner sees it, in the dashboard. It's kept for 30 days (at most 20,000 requests) and contains no prompt or response content.</li>
     <li><b>AI providers receive your prompts</b> and process them under their own terms and privacy policies. Some free tiers (including Google Gemini, Mistral and Kilo) may use prompts to improve their models. NVIDIA logs requests to its free API endpoints for security and to improve its products, and asks that nothing confidential or personal (such as images or recordings of people's faces or voices) be sent. Don't send sensitive information through free tiers.</li>
+    <li><b>Private routing:</b> requests for the model <code>auto:private</code>, or sent with the header <code>x-forager-private: 1</code>, only go to providers whose published terms say they don't train on API prompts and keep them briefly or not at all. As of October 4, 2026 that is Cloudflare Workers AI, Groq, Ollama Cloud and OVHcloud AI Endpoints. For these requests Cloudflare AI Gateway stores no request or response content, only metadata such as model, status and token counts. This relies on each provider's terms, not an independent audit.</li>
     <li><b>Cloudflare AI Gateway:</b> requests to some providers are routed through Cloudflare AI Gateway in the operator's account. When the gateway's log collection is enabled, it stores request and response content there. On fora.ger.llc, gateway logging is currently <b>enabled</b> and limited to the most recent 100,000 requests.</li>
   </ul>
 
